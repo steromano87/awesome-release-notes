@@ -12,16 +12,24 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-go@v5
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
-      - uses: goreleaser/goreleaser-action@v6
+
+      - name: Check GoReleaser configuration
+        uses: goreleaser/goreleaser-action@v7
         with:
           version: "~> v2"
+          args: check
+
+      - name: Build with GoReleaser
+        uses: goreleaser/goreleaser-action@v7
+        with:
           args: release --clean
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

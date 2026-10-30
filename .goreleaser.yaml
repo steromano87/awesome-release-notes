@@ -6,13 +6,15 @@ dist: dist
 before:
   hooks:
     - go mod tidy
+    - go fmt ./...
     - go vet ./...
     - go test ./...
 
 builds:
   - id: arn-gen
     main: .
-    binary: arn-gen
+    binary: "{{ .Os }}_{{ .Arch }}/arn-gen"
+    no_unique_dist_dir: true
     env:
       - CGO_ENABLED=0
     goos:
@@ -26,9 +28,14 @@ builds:
       - -trimpath
     ldflags:
       - -s -w -X main.version={{ .Version }}
+    tags:
+      - osusergo
+      - netgo
+    buildmode: pie
 
 archives:
   - id: binaries
+    strip_binary_directory: true
     formats:
       - tar.gz
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
