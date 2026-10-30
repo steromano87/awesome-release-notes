@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "arn-gen release-note configuration",
+  "description": "Configuration keys are case-insensitive. Omit optional keys to use their defaults; explicit null values are not allowed.",
+  "type": "object",
+  "additionalProperties": false,
+  "patternProperties": {
+    "^[fF][rR][oO][nN][tT][mM][aA][tT][tT][eE][rR]$": { "type": "string" },
+    "^[bB][aA][cC][kK][mM][aA][tT][tT][eE][rR]$": { "type": "string" },
+    "^[cC][oO][mM][mM][iI][tT][pP][aA][tT][tT][eE][rR][nN]$": { "type": "string", "minLength": 1 },
+    "^[iI][gG][nN][oO][rR][eE][uU][nN][mM][aA][tT][cC][hH][eE][dD][cC][oO][mM][mM][iI][tT][sS]$": { "type": "boolean" },
+    "^[eE][xX][cC][lL][uU][dD][eE][dD][pP][aA][tT][tT][eE][rR][nN][sS]$": { "$ref": "#/$defs/patterns" },
+    "^[iI][tT][eE][mM][tT][iI][tT][lL][eE][tT][eE][mM][pP][lL][aA][tT][eE]$": { "type": "string" },
+    "^[iI][tT][eE][mM][bB][oO][dD][yY][tT][eE][mM][pP][lL][aA][tT][eE]$": { "type": "string" },
+    "^[sS][eE][cC][tT][iI][oO][nN][hH][eE][aA][dD][eE][rR][lL][eE][vV][eE][lL]$": { "$ref": "#/$defs/headerLevel" },
+    "^[iI][tT][eE][mM][hH][eE][aA][dD][eE][rR][lL][eE][vV][eE][lL]$": { "$ref": "#/$defs/headerLevel" },
+    "^[uU][nN][cC][aA][tT][eE][gG][oO][rR][iI][zZ][eE][dD][tT][iI][tT][lL][eE]$": { "type": "string" },
+    "^[cC][aA][tT][eE][gG][oO][rR][yY][cC][aA][sS][eE][iI][nN][sS][eE][nN][sS][iI][tT][iI][vV][eE]$": { "type": "boolean" },
+    "^[cC][aA][tT][eE][gG][oO][rR][iI][eE][sS]$": { "$ref": "#/$defs/categories" }
+  },
+  "$defs": {
+    "headerLevel": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 6
+    },
+    "patterns": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "categories": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/category" }
+    },
+    "category": {
+      "type": "object",
+      "additionalProperties": false,
+      "$comment": "Require a name key in any letter case: not every property name may differ from name.",
+      "not": {
+        "propertyNames": {
+          "not": { "pattern": "^[nN][aA][mM][eE]$" }
+        }
+      },
+      "patternProperties": {
+        "^[nN][aA][mM][eE]$": { "type": "string" },
+        "^[pP][aA][tT][tT][eE][rR][nN][sS]$": { "$ref": "#/$defs/patterns" },
+        "^[cC][aA][tT][eE][gG][oO][rR][iI][eE][sS]$": { "$ref": "#/$defs/categories" }
+      }
+    }
+  }
+}

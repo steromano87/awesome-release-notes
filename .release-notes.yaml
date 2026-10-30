@@ -1,0 +1,61 @@
+# These are literal Markdown blocks placed after the title and after the categories.
+frontmatter: |
+  Changes included in this release.
+backmatter: |
+  Thank you to all contributors!
+
+# Go regular expression, applied to subject + optional "\n\n" + body.
+# Conventional Commits are parsed when present; other subjects are accepted too.
+commitPattern: '(?s)^(?:(?P<type>[a-zA-Z]+)(?:\((?P<scope>[^)]+)\))?(?P<breaking>!)?: )?(?P<description>[^\n]+)(?:\n\n(?P<details>.*))?$'
+
+# Skip commits that do not match commitPattern instead of reporting an error.
+ignoreUnmatchedCommits: false
+
+# Optional regexes matched against the full message before parsing (any match excludes).
+# An omitted or empty list includes every commit. Example: ['^Merge ', '^chore:']
+excludedPatterns: []
+
+# Optional Go templates for the item title and content.
+# If omitted, the title is the original subject and the content is the entire body.
+# Named captures are available through .Fields, alongside the standard Git fields.
+itemTitleTemplate: '{{ .Subject }}'
+itemBodyTemplate: '{{ .Body }}'
+
+# Base heading levels: add 1 per category depth; values above 6 are rejected.
+# The release title stays at level 1.
+sectionHeaderLevel: 2
+itemHeaderLevel: 3
+
+uncategorizedTitle: Other changes
+
+# Ignore case in category patterns at every depth (default: false).
+categoryCaseInsensitive: false
+
+# Sibling categories are tried in order; children are tried before the parent.
+# A parent's patterns are optional when it has children, and act as a fallback.
+# Names must be unique throughout the tree. Empty branches are not rendered.
+categories:
+  - name: Breaking changes
+    patterns:
+      - '^[a-zA-Z]+(?:\([^)]+\))?!:'
+      - '(?m)^BREAKING[ -]CHANGE:'
+  - name: Features
+    patterns:
+      - '^feat(?:\([^)]+\))?!?:'
+    categories:
+      - name: API features
+        patterns:
+          - '^feat\(api\)!?:'
+      - name: CLI features
+        patterns:
+          - '^feat\(cli\)!?:'
+  - name: Bug fixes
+    patterns:
+      - '^fix(?:\([^)]+\))?!?:'
+      - '^revert(?:\([^)]+\))?!?:'
+  - name: Documentation
+    patterns:
+      - '^docs(?:\([^)]+\))?!?:'
+  - name: Maintenance
+    patterns:
+      - '^(?:chore|build|ci|refactor|perf|style|test)(?:\([^)]+\))?!?:'
