@@ -15,20 +15,18 @@ type TemplateItem struct {
 	Fields map[string]string
 }
 
-func Render(cfg *config.Compiled, releaseTitle string, commits []gitlog.Commit, logger *log.Logger) ([]byte, error) {
+func Render(cfg *config.Config, releaseTitle string, commits []gitlog.Commit) ([]byte, error) {
 	groups := make(map[string][]string)
 commitLoop:
 	for _, commit := range commits {
-		for _, pattern := range cfg.Exclusions {
+		for _, pattern := range cfg.ExcludedPatterns {
 			if pattern.MatchString(commit.Message) {
 				continue commitLoop
 			}
 		}
-		matches := cfg.Pattern.FindStringSubmatch(commit.Message)
+		matches := cfg.CommitPattern.FindStringSubmatch(commit.Message)
 		if matches == nil && cfg.IgnoreUnmatchedCommits {
-			if logger != nil {
-				logger.Printf("[skip] Commit %s does not match commitPattern: %q", commit.ShortHash, commit.Subject)
-			}
+			log.Printf("[skip] Commit %s does not match commitPattern: %q", commit.ShortHash, commit.Subject)
 			continue
 		}
 		if strings.TrimSpace(commit.Subject) == "" {
@@ -38,24 +36,24 @@ commitLoop:
 			return nil, fmt.Errorf("commit %s does not match commitPattern: %q", commit.ShortHash, commit.Subject)
 		}
 		fields := make(map[string]string)
-		for i, name := range cfg.Pattern.SubexpNames() {
+		for i, name := range cfg.CommitPattern.SubexpNames() {
 			if name != "" {
 				fields[name] = matches[i]
 			}
 		}
 		item := TemplateItem{Commit: commit, Fields: fields}
 		var title, body bytes.Buffer
-		if err := cfg.TitleTemplate.Execute(&title, item); err != nil {
+		if err := cfg.ItemTitleTemplate.Execute(&title, item); err != nil {
 			return nil, fmt.Errorf("render commit %s itemTitleTemplate: %w", commit.ShortHash, err)
 		}
 		renderedTitle := strings.Trim(title.String(), "\r\n")
 		if strings.TrimSpace(renderedTitle) == "" || strings.ContainsAny(renderedTitle, "\r\n") {
 			return nil, fmt.Errorf("itemTitleTemplate for commit %s must render a non-empty single line", commit.ShortHash)
 		}
-		if err := cfg.BodyTemplate.Execute(&body, item); err != nil {
+		if err := cfg.ItemBodyTemplate.Execute(&body, item); err != nil {
 			return nil, fmt.Errorf("render commit %s itemBodyTemplate: %w", commit.ShortHash, err)
 		}
-		group, depth := matchCategory(cfg.Groups, commit.Message, 0)
+		group, depth := matchCategory(cfg.Categories, commit.Message, 0)
 		if group == "" {
 			group = cfg.UncategorizedTitle
 		}
@@ -69,7 +67,7 @@ commitLoop:
 	if text := strings.Trim(cfg.Frontmatter, "\r\n"); text != "" {
 		blocks = append(blocks, text)
 	}
-	for _, category := range cfg.Groups {
+	for _, category := range cfg.Categories {
 		blocks = append(blocks, renderCategory(category, groups, cfg.SectionHeaderLevel, 0)...)
 	}
 	if entries := groups[cfg.UncategorizedTitle]; len(entries) > 0 {
@@ -82,7 +80,7 @@ commitLoop:
 	return []byte(strings.ReplaceAll(document, "\r", "\n")), nil
 }
 
-func matchCategory(categories []config.CompiledCategory, message string, depth int) (string, int) {
+func matchCategory(categories []config.Category, message string, depth int) (string, int) {
 	for _, category := range categories {
 		if name, childDepth := matchCategory(category.Categories, message, depth+1); name != "" {
 			return name, childDepth
@@ -96,7 +94,7 @@ func matchCategory(categories []config.CompiledCategory, message string, depth i
 	return "", 0
 }
 
-func renderCategory(category config.CompiledCategory, groups map[string][]string, sectionLevel, depth int) []string {
+func renderCategory(category config.Category, groups map[string][]string, sectionLevel, depth int) []string {
 	var children []string
 	for _, child := range category.Categories {
 		children = append(children, renderCategory(child, groups, sectionLevel, depth+1)...)

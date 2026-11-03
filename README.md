@@ -2,7 +2,7 @@
 
 `arn-gen` turns Git commit messages into Markdown release notes. It reads a
 local repository through `HEAD`, groups commits into categories, and writes
-the result to standard output or a file.
+the result to a file.
 
 You control which commits to include, how to categorize them, and how each
 entry reads. Conventional Commits work with the included configuration, but
@@ -30,15 +30,16 @@ Git project.
 Run it from that project:
 
 ```shell
-arn-gen
-arn-gen --title "Release 1.3.0" --from v1.2.0 --output RELEASE_NOTES.md
-arn-gen --repo /path/to/project --config custom.yaml
+arn-gen RELEASE_NOTES.md
+arn-gen --title "Release 1.3.0" --from v1.2.0 RELEASE_NOTES.md
+arn-gen --repo /path/to/project --config custom.yaml RELEASE_NOTES.md
 ```
 
-The first command prints notes for commits since the nearest reachable tag.
-The second chooses a starting tag and saves the document. The third uses
-another repository and configuration file. Paths passed to `--repo`,
-`--config`, and `--output` are relative to your current working directory.
+The first command saves notes for commits since the nearest reachable tag.
+The second chooses a starting tag. The third uses another repository and
+configuration file. The output file path is a required positional argument;
+without it the command fails and generates nothing. Paths passed to `--repo`,
+`--config`, and the output file are relative to your current working directory.
 
 In PowerShell, use paths such as `--repo C:\Projects\my-project`. If the binary
 is in the current directory rather than on `PATH`, run `.\arn-gen.exe` on
@@ -75,13 +76,15 @@ an item heading.
 
 ## CLI options
 
+`arn-gen [flags] <output-file>`: the file is created or overwritten; its parent directory must exist.
+
 | Flag | Default | Purpose |
 | --- | --- | --- |
 | `--repo` | `.` | Repository or any directory inside it. |
 | `--config` | Repository-root `.release-notes.<extension>` | JSON, YAML, or TOML configuration path. |
-| `--from` | Nearest reachable tag | Starting tag, excluded from the range. |
+| `--from` | Nearest reachable tag | Starting tag, hash, or revision (not a branch), excluded from the range. |
+| `--to` | `HEAD` | Ending revision (hash, branch, or tag), included in the range. |
 | `--format` | `markdown` | Output format; only `markdown` is supported. |
-| `--output` | Standard output | File to create or overwrite; parent directory must exist. |
 | `--title` | `Release notes` | Non-empty, single-line release title. |
 | `--version` | | Print the binary version. |
 | `--help` | | Print usage. |
@@ -90,14 +93,16 @@ Set the release title with `--title`, not in the configuration file.
 
 ## Commit selection
 
-The range always ends at `HEAD`, including a detached HEAD. It includes commits
+The range ends at `HEAD` (including a detached HEAD) unless `--to` selects another
+commit, given as a hash, branch, tag, or revision such as `HEAD~1`. It includes commits
 from merged branches and merge commits, but not unmerged branches or uncommitted
 changes. The repository must have at least one commit and a working tree;
 bare repositories are not supported.
 
-`--from` accepts an exact tag name, not a branch, hash, or revision expression.
-The tag must point to a commit reachable from `HEAD`. That commit and its
-ancestors are excluded from the notes.
+`--from` accepts a tag, a commit hash, or a revision expression such as
+`v1.2.0^{commit}`, but not a branch. The commit must be reachable from the end
+commit. That commit and its ancestors are excluded from the notes. `--to`
+accepts the same values plus branches.
 
 Without `--from`, the CLI chooses the reachable tag that leaves the fewest
 commits in the range. This is a commit-graph comparison, not a search for the
@@ -124,8 +129,10 @@ automatically selected range, so fetching commits alone is not enough.
 ## Configuration
 
 A configuration file is required. By default, the CLI looks in the Git
-repository root, even when you run it from a subdirectory. It checks these
-names in order and uses the first file it finds:
+repository root, even when you run it from a subdirectory, for
+`.release-notes.<extension>` with any extension Viper supports (JSON, TOML,
+YAML/YML are the documented ones) and uses the first file it finds, checked in
+this order:
 
 1. `.release-notes.json`
 2. `.release-notes.toml`
@@ -134,8 +141,7 @@ names in order and uses the first file it finds:
 
 Files are not merged. An invalid selected file causes an error; the CLI does
 not try the next format. Use `--config custom.toml` to select a file explicitly.
-An explicit path can have any basename, but must use one of the extensions
-above. Process environment variables do not override file settings.
+An explicit path can have any basename, but must use an extension Viper supports. Process environment variables do not override file settings.
 
 Start with the included [`.release-notes.yaml`](.release-notes.yaml), which
 accepts Conventional Commits and ordinary commit messages. This shorter
@@ -184,8 +190,8 @@ document: a blank value such as `itemTitleTemplate:` is null, not a default.
 | `categoryCaseInsensitive` | `false` | Ignore case in category patterns at every depth. Does not affect parsing or exclusions. |
 | `uncategorizedTitle` | `Other changes` | Heading for commits not matched by a category. Must differ from every category name. |
 
-Heading levels must be integers from 1 to 6. YAML and TOML require integer
-literals; JSON also accepts integer-valued numbers such as `3.0`.
+Heading levels must be integers from 1 to 6; integer-valued numbers such as
+`3.0` are accepted.
 
 For editor validation, use the
 [JSON Schema](internal/config/release-notes.schema.json), included in release
@@ -196,7 +202,7 @@ editors supporting YAML Language Server can use:
 # yaml-language-server: $schema=release-notes.schema.json
 ```
 
-The CLI embeds the schema and validates configuration locally. You do not need
+The CLI validates the configuration locally after loading it. You do not need
 to install the schema separately or access the network to run the CLI.
 
 ### Parsing and exclusions
@@ -332,8 +338,8 @@ renames it over the destination after writing and flushing. A failed write
 does not truncate existing notes. Existing file permissions are retained;
 symbolic links are followed to their targets, and dangling links are errors.
 
-Notes go to standard output unless you pass `--output`. Logs and diagnostics
-go to standard error.
+Notes are written only to the output file. Progress logs go to standard
+output; errors go to standard error.
 
 | Exit code | Meaning |
 | --- | --- |

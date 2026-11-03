@@ -18,9 +18,9 @@ import (
 type argumentError struct{ error }
 
 func Run(args []string, stdout, stderr io.Writer, version string) int {
-	var repoPath, configPath, from, format, output, title string
+	var repoPath, configPath, from, to, format, title string
 	command := &cobra.Command{
-		Use:           "arn-gen",
+		Use:           "arn-gen [flags] <output-file>",
 		Short:         "Generate Markdown release notes from Git commits",
 		Long:          "Generate Markdown release notes from Git commits through HEAD.\nWithout reachable tags, the entire history is included. No Git executable is required.",
 		Version:       version,
@@ -30,27 +30,27 @@ func Run(args []string, stdout, stderr io.Writer, version string) int {
 			DisableDefaultCmd: true,
 		},
 		Args: func(_ *cobra.Command, args []string) error {
-			if len(args) != 0 {
-				return argumentError{errors.New("positional arguments are not supported")}
+			if len(args) != 1 {
+				return argumentError{errors.New("exactly one output file path is required")}
 			}
 			return nil
 		},
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		RunE: func(_ *cobra.Command, args []string) error {
 			if format != "markdown" {
 				return argumentError{fmt.Errorf("unsupported format %q; supported formats: markdown", format)}
 			}
 			if strings.TrimSpace(title) == "" || strings.ContainsAny(title, "\r\n") {
 				return argumentError{errors.New("--title must be a non-empty single line")}
 			}
-			return generate(repoPath, configPath, from, output, title, cmd.OutOrStdout(), cmd.ErrOrStderr())
+			return generate(repoPath, configPath, from, to, args[0], title, stdout)
 		},
 	}
 	flags := command.Flags()
 	flags.StringVar(&repoPath, "repo", ".", "Git repository or a directory inside it")
 	flags.StringVar(&configPath, "config", "", "JSON, YAML or TOML configuration (default: repository-root "+config.DefaultName+".<extension>)")
-	flags.StringVar(&from, "from", "", "starting tag, excluded (default: nearest tag reachable from HEAD)")
+	flags.StringVar(&from, "from", "", "starting revision, excluded: tag, commit hash, or expression, not a branch (default: nearest tag reachable from the end commit)")
+	flags.StringVar(&to, "to", "", "ending revision, included: commit hash, branch, or tag (default: HEAD)")
 	flags.StringVar(&format, "format", "markdown", "output format (markdown)")
-	flags.StringVar(&output, "output", "", "output file (default: stdout)")
 	flags.StringVar(&title, "title", "Release notes", "release title (non-empty single line)")
 	command.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return argumentError{err} })
 	command.SetVersionTemplate("{{.Version}}\n")
@@ -68,8 +68,10 @@ func Run(args []string, stdout, stderr io.Writer, version string) int {
 	return 0
 }
 
-func generate(repoPath, configPath, from, output, title string, stdout, stderr io.Writer) (err error) {
-	logger := log.New(stderr, "[arn-gen] ", 0)
+func generate(repoPath, configPath, from, to, output, title string, stdout io.Writer) (err error) {
+	log.SetOutput(stdout)
+	log.SetPrefix("[arn-gen] ")
+	log.SetFlags(0)
 	repo, err := gitlog.Open(repoPath)
 	if err != nil {
 		return err
@@ -77,34 +79,24 @@ func generate(repoPath, configPath, from, output, title string, stdout, stderr i
 	defer func() {
 		err = errors.Join(err, repo.Close())
 		if err == nil {
-			if output == "" {
-				logger.Print("[ok] Release notes generated successfully (stdout)")
-			} else {
-				logger.Printf("[ok] Release notes generated successfully: %q", output)
-			}
+			log.Printf("[ok] Release notes generated successfully: %q", output)
 		}
 	}()
-	logger.Printf("[info] Repository: %q", repo.Root)
+	log.Printf("[info] Repository: %q", repo.Root)
 	cfg, err := config.LoadFile(repo.Root, configPath)
 	if err != nil {
 		return err
 	}
-	commits, err := repo.Commits(from, logger)
+	commits, err := repo.Commits(from, to)
 	if err != nil {
 		return err
 	}
-	logger.Printf("[info] Generating release notes from %d commits", len(commits))
-	rendered, err := notes.Render(cfg, title, commits, logger)
+	log.Printf("[info] Generating release notes from %d commits", len(commits))
+	rendered, err := notes.Render(cfg, title, commits)
 	if err != nil {
 		return err
 	}
-	if output != "" {
-		if err := writeOutput(output, bytes.NewReader(rendered)); err != nil {
-			return fmt.Errorf("write release notes: %w", err)
-		}
-		return nil
-	}
-	if _, err := stdout.Write(rendered); err != nil {
+	if err := writeOutput(output, bytes.NewReader(rendered)); err != nil {
 		return fmt.Errorf("write release notes: %w", err)
 	}
 	return nil

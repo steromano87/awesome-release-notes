@@ -52,19 +52,25 @@ func (r *Repository) Close() error {
 	return nil
 }
 
-// Commits returns oldest-first commits reachable from HEAD but not from the base tag.
+// Commits returns oldest-first commits reachable from HEAD (or to) but not from the base tag.
 // Without a tag, the reachable tag with the fewest commits ahead of it is selected.
-func (r *Repository) Commits(tag string, logger *log.Logger) ([]Commit, error) {
+// A non-empty to is any revision (hash, branch, tag, HEAD~1) replacing HEAD as the end of the range.
+func (r *Repository) Commits(tag, to string) ([]Commit, error) {
 	head, err := r.repo.Head()
 	if err != nil {
 		return nil, fmt.Errorf("repository must have at least one commit: %w", err)
 	}
-	if logger != nil {
-		if head.Name().IsBranch() {
-			logger.Printf("[info] Running on branch: %q", head.Name().Short())
-		} else {
-			logger.Printf("[info] Running on detached HEAD: %s", head.Hash())
+	end := head.Hash()
+	if to != "" {
+		end, err = r.resolveCommit(to)
+		if err != nil {
+			return nil, err
 		}
+		log.Printf("[info] Ending at commit: %s", end)
+	} else if head.Name().IsBranch() {
+		log.Printf("[info] Running on branch: %q", head.Name().Short())
+	} else {
+		log.Printf("[info] Running on detached HEAD: %s", head.Hash())
 	}
 	shallow, err := r.repo.Storer.Shallow()
 	if err != nil {
@@ -73,7 +79,7 @@ func (r *Repository) Commits(tag string, logger *log.Logger) ([]Commit, error) {
 	if len(shallow) > 0 {
 		return nil, errors.New("shallow Git history is incomplete; fetch complete history and tags")
 	}
-	iter, err := r.repo.Log(&git.LogOptions{From: head.Hash(), Order: git.LogOrderCommitterTime})
+	iter, err := r.repo.Log(&git.LogOptions{From: end, Order: git.LogOrderCommitterTime})
 	if err != nil {
 		return nil, fmt.Errorf("read Git history: %w", err)
 	}
@@ -96,21 +102,17 @@ func (r *Repository) Commits(tag string, logger *log.Logger) ([]Commit, error) {
 	}
 	var base plumbing.Hash
 	if tag != "" {
-		name := plumbing.NewTagReferenceName(tag)
-		if err := name.Validate(); err != nil {
-			return nil, fmt.Errorf("invalid tag %q: %w", tag, err)
+		if _, err := r.repo.Reference(plumbing.NewTagReferenceName(tag), true); err != nil {
+			if _, err := r.repo.Reference(plumbing.NewBranchReferenceName(tag), true); err == nil {
+				return nil, fmt.Errorf("--from %q is a branch; use a tag, commit hash, or revision", tag)
+			}
 		}
-		ref, err := r.repo.Reference(name, true)
+		base, err = r.resolveCommit(tag)
 		if err != nil {
-			return nil, fmt.Errorf("resolve tag %q: %w", tag, err)
+			return nil, err
 		}
-		commit, _, _, err := r.peelTag(ref.Hash())
-		if err != nil {
-			return nil, fmt.Errorf("resolve tag %q: %w", tag, err)
-		}
-		base = commit.Hash
 		if graph[base] == nil {
-			return nil, fmt.Errorf("tag %q must be an ancestor of HEAD", tag)
+			return nil, fmt.Errorf("revision %q must be an ancestor of the end commit", tag)
 		}
 	} else {
 		base, tag, err = r.nearestTag(graph)
@@ -118,12 +120,10 @@ func (r *Repository) Commits(tag string, logger *log.Logger) ([]Commit, error) {
 			return nil, err
 		}
 	}
-	if logger != nil {
-		if tag == "" {
-			logger.Print("[info] No reachable tag found; including all history from the first commit")
-		} else {
-			logger.Printf("[info] Previous tag: %q (excluded from the commit range)", tag)
-		}
+	if tag == "" {
+		log.Print("[info] No reachable tag found; including all history from the first commit")
+	} else {
+		log.Printf("[info] Previous tag: %q (excluded from the commit range)", tag)
 	}
 	excluded := ancestors(graph, base)
 	hashes := make([]string, 0, len(history))
@@ -153,6 +153,26 @@ func (r *Repository) Commits(tag string, logger *log.Logger) ([]Commit, error) {
 }
 
 var errNotCommit = errors.New("tag does not point to a commit")
+
+// resolveCommit resolves a hash, branch, tag, or revision expression to a commit.
+func (r *Repository) resolveCommit(rev string) (plumbing.Hash, error) {
+	// ResolveRevision cannot peel nested annotated tags, so exact tag names are peeled here.
+	if ref, err := r.repo.Reference(plumbing.NewTagReferenceName(rev), true); err == nil {
+		commit, _, _, err := r.peelTag(ref.Hash())
+		if err != nil {
+			return plumbing.ZeroHash, fmt.Errorf("resolve tag %q: %w", rev, err)
+		}
+		return commit.Hash, nil
+	}
+	hash, err := r.repo.ResolveRevision(plumbing.Revision(rev))
+	if err != nil {
+		return plumbing.ZeroHash, fmt.Errorf("resolve revision %q: %w", rev, err)
+	}
+	if _, err := r.repo.CommitObject(*hash); err != nil {
+		return plumbing.ZeroHash, fmt.Errorf("revision %q does not point to a commit: %w", rev, err)
+	}
+	return *hash, nil
+}
 
 func (r *Repository) peelTag(hash plumbing.Hash) (*object.Commit, bool, time.Time, error) {
 	var annotated bool

@@ -2,7 +2,6 @@ package cli
 
 import (
 	"bytes"
-	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -18,15 +17,14 @@ import (
 
 func TestProgressLogs(t *testing.T) {
 	for _, tt := range []struct {
-		name       string
-		tags       bool
-		from       string
-		detached   bool
-		fileOutput bool
+		name     string
+		tags     bool
+		from     string
+		detached bool
 	}{
 		{name: "fallback"},
 		{name: "automatic tag", tags: true},
-		{name: "explicit tag", tags: true, from: "v1", fileOutput: true},
+		{name: "explicit tag", tags: true, from: "v1"},
 		{name: "detached HEAD", detached: true},
 		{name: "detached HEAD with tag", tags: true, detached: true},
 	} {
@@ -59,17 +57,13 @@ func TestProgressLogs(t *testing.T) {
 			if tt.from != "" {
 				args = append(args, "--from", tt.from)
 			}
-			file := filepath.Join(dir, "notes.md")
-			if tt.fileOutput {
-				args = append(args, "--output", file)
+			code, notes, stdout, stderr := runNotes(t, args...)
+			if code != 0 {
+				t.Fatalf("exit %d: %s", code, stderr)
 			}
-			var stdout, stderr bytes.Buffer
-			if code := Run(args, &stdout, &stderr, "test"); code != 0 {
-				t.Fatalf("exit %d: %s", code, &stderr)
-			}
-			lines := strings.Split(strings.TrimSuffix(stderr.String(), "\n"), "\n")
-			if len(lines) != 5 {
-				t.Fatalf("expected repository, branch, tag, generation and success logs: %s", &stderr)
+			lines := strings.Split(strings.TrimSuffix(stdout, "\n"), "\n")
+			if len(lines) != 5 || stderr != "" {
+				t.Fatalf("expected repository, branch, tag, generation and success logs on stdout only: %s; stderr: %s", stdout, stderr)
 			}
 			repoPath, err := strconv.Unquote(strings.TrimPrefix(lines[0], "[arn-gen] [info] Repository: "))
 			if err != nil {
@@ -100,16 +94,10 @@ func TestProgressLogs(t *testing.T) {
 			}
 			if lines[2] != wantTag || !strings.HasPrefix(lines[3], "[arn-gen] [info] Generating release notes from ") ||
 				!strings.HasPrefix(lines[4], "[arn-gen] [ok] Release notes generated successfully") {
-				t.Fatalf("unexpected logs: %s", &stderr)
+				t.Fatalf("unexpected logs: %s", stdout)
 			}
-			if tt.fileOutput {
-				data, err := os.ReadFile(file)
-				if err != nil || !bytes.HasPrefix(data, []byte("# Release notes\n")) || bytes.Contains(data, []byte("[arn-gen]")) ||
-					stdout.Len() != 0 || !strings.Contains(lines[4], "notes.md") {
-					t.Fatalf("unexpected file output or logs: %q, %v; %s", data, err, &stderr)
-				}
-			} else if !strings.HasPrefix(stdout.String(), "# Release notes\n") || strings.Contains(stdout.String(), "[arn-gen]") {
-				t.Fatalf("logs contaminated stdout: %s", &stdout)
+			if !strings.HasPrefix(notes, "# Release notes\n") || strings.Contains(notes, "[arn-gen]") || !strings.Contains(lines[4], "notes.md") {
+				t.Fatalf("unexpected file output or logs: %q; %s", notes, stdout)
 			}
 		})
 	}
@@ -127,24 +115,15 @@ func TestGenerateEndToEnd(t *testing.T) {
 	if err := os.Mkdir(nested, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	var stdout, stderr bytes.Buffer
-	if code := Run([]string{"--repo", nested, "--title", "Release 2"}, &stdout, &stderr, "test"); code != 0 {
-		t.Fatalf("exit %d: %s", code, &stderr)
+	code, notes, stdout, stderr := runNotes(t, "--repo", nested, "--title", "Release 2")
+	if code != 0 || !strings.HasPrefix(notes, "# Release 2\n") ||
+		!strings.Contains(notes, "### Other changes\n\n#### Custom: feat: new option\n\nDescribe the new option.\n\n- Usage details\n") ||
+		strings.Contains(notes, "initial") || !strings.Contains(stdout, "[ok] Release notes generated successfully") {
+		t.Fatalf("unexpected output: exit %d, %s; stdout: %s; stderr: %s", code, notes, stdout, stderr)
 	}
-	if !strings.HasPrefix(stdout.String(), "# Release 2\n") ||
-		!strings.Contains(stdout.String(), "### Other changes\n\n#### Custom: feat: new option\n\nDescribe the new option.\n\n- Usage details\n") ||
-		strings.Contains(stdout.String(), "initial") || !strings.Contains(stderr.String(), "[ok] Release notes generated successfully") {
-		t.Fatalf("unexpected output: %s; stderr: %s", &stdout, &stderr)
-	}
-	file := filepath.Join(dir, "notes.md")
-	want := stdout.String()
-	stdout.Reset()
-	if code := Run([]string{"--repo", dir, "--from", "v1", "--config", customConfig, "--output", file, "--format", "markdown", "--title", "Release 2"}, &stdout, &stderr, "test"); code != 0 {
-		t.Fatalf("exit %d: %s", code, &stderr)
-	}
-	data, err := os.ReadFile(file)
-	if err != nil || string(data) != want || stdout.Len() != 0 {
-		t.Fatalf("unexpected file output: %q, %v; stdout: %s", data, err, &stdout)
+	code, again, _, stderr := runNotes(t, "--repo", dir, "--from", "v1", "--config", customConfig, "--format", "markdown", "--title", "Release 2")
+	if code != 0 || again != notes {
+		t.Fatalf("unexpected output with explicit options: exit %d, %q; stderr: %s", code, again, stderr)
 	}
 }
 
@@ -171,19 +150,18 @@ func TestGenerateConfigurationFormats(t *testing.T) {
 					write(t, custom, tt.text)
 					args = append(args, "--config", custom)
 				}
-				var stdout, stderr bytes.Buffer
-				code := Run(args, &stdout, &stderr, "test")
+				code, notes, stdout, stderr := runNotes(t, args...)
 				want := "# Release notes\n\n### Changes\n\n#### Features\n\n##### feat: new option\n\nDetails.\n"
-				if code != 0 || !strings.Contains(stderr.String(), "[ok]") || stdout.String() != want {
-					t.Fatalf("explicit=%v: exit %d, stdout %q, stderr %q", explicit, code, &stdout, &stderr)
+				if code != 0 || !strings.Contains(stdout, "[ok]") || notes != want {
+					t.Fatalf("explicit=%v: exit %d, notes %q, stdout %q, stderr %q", explicit, code, notes, stdout, stderr)
 				}
 			}
 			write(t, path, "invalid configuration")
 			output := filepath.Join(dir, "notes.md")
 			write(t, output, "keep existing notes")
 			var stdout, stderr bytes.Buffer
-			if code := Run([]string{"--repo", nested, "--output", output}, &stdout, &stderr, "test"); code != 1 || stdout.Len() != 0 {
-				t.Fatalf("invalid configuration must fail without stdout: exit %d, %s", code, &stderr)
+			if code := Run([]string{"--repo", nested, output}, &stdout, &stderr, "test"); code != 1 || strings.Contains(stdout.String(), "[ok]") {
+				t.Fatalf("invalid configuration must fail without success log: exit %d, %s", code, &stderr)
 			}
 			data, err := os.ReadFile(output)
 			if err != nil || string(data) != "keep existing notes" {
@@ -216,11 +194,10 @@ func TestExampleConfiguration(t *testing.T) {
 		t.Fatal(err)
 	}
 	write(t, filepath.Join(dir, config.DefaultName+".yaml"), string(data))
-	var stdout, stderr bytes.Buffer
-	if code := Run([]string{"--repo", dir}, &stdout, &stderr, "test"); code != 0 {
-		t.Fatalf("exit %d: %s", code, &stderr)
+	code, text, _, stderr := runNotes(t, "--repo", dir)
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, stderr)
 	}
-	text := stdout.String()
 	for _, expected := range []string{
 		"# Release notes", "Changes included in this release.",
 		"## Breaking changes", "### feat(api)!: change response format",
@@ -253,18 +230,17 @@ func TestExcludedPatternsEndToEnd(t *testing.T) {
 commitPattern: '^feat: (?P<description>[^\n]+)'
 excludedPatterns: ['^Merge ', '(?m)^skip-release-notes$']
 `)
-	var stdout, stderr bytes.Buffer
-	if code := Run([]string{"--repo", dir}, &stdout, &stderr, "test"); code != 0 {
-		t.Fatalf("exit %d: %s", code, &stderr)
+	code, notes, _, stderr := runNotes(t, "--repo", dir)
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, stderr)
 	}
-	if stdout.String() != "# Release notes\n\n## Other changes\n\n### feat: keep\n\nVisible body.\n" {
-		t.Fatalf("unexpected filtered release notes: %s", &stdout)
+	if notes != "# Release notes\n\n## Other changes\n\n### feat: keep\n\nVisible body.\n" {
+		t.Fatalf("unexpected filtered release notes: %s", notes)
 	}
 	write(t, cfg, "commitPattern: '^feat: (?P<description>[^\\n]+)'")
-	stdout.Reset()
-	if code := Run([]string{"--repo", dir}, &stdout, &stderr, "test"); code != 1 ||
-		!strings.Contains(stderr.String(), "does not match commitPattern") || stdout.Len() != 0 {
-		t.Fatalf("without exclusions every commit must be parsed; exit %d: %s", code, &stderr)
+	code, notes, _, stderr = runNotes(t, "--repo", dir)
+	if code != 1 || !strings.Contains(stderr, "does not match commitPattern") || notes != "" {
+		t.Fatalf("without exclusions every commit must be parsed; exit %d: %s", code, stderr)
 	}
 }
 
@@ -284,13 +260,13 @@ categories:
       - name: Empty
         patterns: ['^fix:']
 `)
-	var stdout, stderr bytes.Buffer
-	if code := Run([]string{"--repo", dir}, &stdout, &stderr, "test"); code != 0 {
-		t.Fatalf("exit %d: %s", code, &stderr)
+	code, notes, _, stderr := runNotes(t, "--repo", dir)
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, stderr)
 	}
 	want := "# Release notes\n\n## Changes\n\n### Features\n\n#### CLI\n\n##### feat(cli): nested option\n\nNested details.\n"
-	if stdout.String() != want {
-		t.Fatalf("got:\n%s\nwant:\n%s", &stdout, want)
+	if notes != want {
+		t.Fatalf("got:\n%s\nwant:\n%s", notes, want)
 	}
 }
 
@@ -306,16 +282,16 @@ ignoreUnmatchedCommits: true
 excludedPatterns: ['^chore: excluded$']
 itemTitleTemplate: '{{.Fields.description}}'
 `)
-	var stdout, stderr bytes.Buffer
-	if code := Run([]string{"--repo", dir}, &stdout, &stderr, "test"); code != 0 || !strings.Contains(stderr.String(), "[ok]") {
-		t.Fatalf("exit %d: %s", code, &stderr)
+	code, notes, stdout, stderr := runNotes(t, "--repo", dir)
+	if code != 0 || !strings.Contains(stdout, "[ok]") {
+		t.Fatalf("exit %d: %s", code, stderr)
 	}
-	if want := "# Release notes\n\n## Other changes\n\n### keep\n\nDetails.\n"; stdout.String() != want {
-		t.Fatalf("got %q, want %q", &stdout, want)
+	if want := "# Release notes\n\n## Other changes\n\n### keep\n\nDetails.\n"; notes != want {
+		t.Fatalf("got %q, want %q", notes, want)
 	}
-	if strings.Count(stderr.String(), "[skip]") != 2 || !strings.Contains(stderr.String(), `"initial"`) ||
-		!strings.Contains(stderr.String(), `"chore: skip"`) || strings.Contains(stderr.String(), `"chore: excluded"`) {
-		t.Fatalf("expected a log for every unmatched commit, but not exclusions: %s", &stderr)
+	if strings.Count(stdout, "[skip]") != 2 || !strings.Contains(stdout, `"initial"`) ||
+		!strings.Contains(stdout, `"chore: skip"`) || strings.Contains(stdout, `"chore: excluded"`) {
+		t.Fatalf("expected a log for every unmatched commit, but not exclusions: %s", stdout)
 	}
 }
 
@@ -328,15 +304,16 @@ func TestRunArguments(t *testing.T) {
 	}{
 		{"version", []string{"--version"}, 0, "1.2.3"},
 		{"help", []string{"--help"}, 0, "Usage:"},
-		{"format", []string{"--format", "html"}, 2, "unsupported format"},
+		{"format", []string{"--format", "html", "out.md"}, 2, "unsupported format"},
+		{"missing output", nil, 2, "output file path is required"},
+		{"extra output", []string{"a.md", "b.md"}, 2, "output file path is required"},
 		{"unknown flag", []string{"--unknown"}, 2, "unknown flag"},
-		{"positional", []string{"extra"}, 2, "positional arguments"},
 		{"missing value", []string{"--from"}, 2, "flag needs an argument"},
 		{"missing title value", []string{"--title"}, 2, "flag needs an argument"},
-		{"empty title", []string{"--title", ""}, 2, "--title must be a non-empty single line"},
-		{"whitespace title", []string{"--title", " \t "}, 2, "--title must be a non-empty single line"},
-		{"multiline title", []string{"--title", "Release\nnotes"}, 2, "--title must be a non-empty single line"},
-		{"carriage return title", []string{"--title", "Release\rnotes"}, 2, "--title must be a non-empty single line"},
+		{"empty title", []string{"out.md", "--title", ""}, 2, "--title must be a non-empty single line"},
+		{"whitespace title", []string{"out.md", "--title", " \t "}, 2, "--title must be a non-empty single line"},
+		{"multiline title", []string{"out.md", "--title", "Release\nnotes"}, 2, "--title must be a non-empty single line"},
+		{"carriage return title", []string{"out.md", "--title", "Release\rnotes"}, 2, "--title must be a non-empty single line"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
@@ -344,8 +321,8 @@ func TestRunArguments(t *testing.T) {
 			if code != tt.code || !strings.Contains(stdout.String()+stderr.String(), tt.text) {
 				t.Fatalf("exit %d, stdout %q, stderr %q", code, &stdout, &stderr)
 			}
-			if tt.code == 0 && stderr.Len() != 0 {
-				t.Fatalf("help/version must not emit progress logs: %s", &stderr)
+			if tt.code == 0 && strings.Contains(stdout.String(), "[arn-gen]") {
+				t.Fatalf("help/version must not emit progress logs: %s", &stdout)
 			}
 		})
 	}
@@ -357,8 +334,14 @@ func TestRunWithoutArguments(t *testing.T) {
 	write(t, filepath.Join(dir, config.DefaultName+".yaml"), "{}")
 	t.Chdir(dir)
 	var stdout, stderr bytes.Buffer
-	if code := Run(nil, &stdout, &stderr, "test"); code != 0 || !strings.HasPrefix(stdout.String(), "# Release notes\n") {
-		t.Fatalf("nil args must not inherit the process arguments; exit %d: %s", code, &stderr)
+	if code := Run([]string{"notes.md"}, &stdout, &stderr, "test"); code != 0 {
+		t.Fatalf("exit %d: %s", code, &stderr)
+	}
+	if data, err := os.ReadFile("notes.md"); err != nil || !strings.HasPrefix(string(data), "# Release notes\n") {
+		t.Fatalf("output path must be relative to the working directory: %q, %v", data, err)
+	}
+	if code := Run(nil, &stdout, &stderr, "test"); code != 2 {
+		t.Fatalf("nil args must not inherit the process arguments; exit %d", code)
 	}
 }
 
@@ -375,34 +358,34 @@ func TestGenerationErrorsDoNotOverwriteOutput(t *testing.T) {
 		want string
 	}{
 		{"missing config", "", nil, "read configuration"},
-		{"bad config", "commitPattern: '['", nil, "invalid commitPattern"},
-		{"null template", "itemTitleTemplate: null", nil, "schema validation failed"},
-		{"null nested patterns", "categories: [{name: Changes, patterns: null}]", nil, "schema validation failed"},
+		{"bad config", "commitPattern: '['", nil, "'commitPattern' error parsing regexp"},
+		{"empty template", "itemTitleTemplate: ''", nil, "'itemTitleTemplate' value must not be empty"},
+		{"nested patterns missing", "categories: [{name: Changes, patterns: null}]", nil, "at least one pattern"},
 		{"bad body template", "itemBodyTemplate: '{{.Fields.missing}}'", nil, "render commit"},
 		{"bad title template", "itemTitleTemplate: '{{.Fields.missing}}'", nil, "render commit"},
 		{"empty rendered title", "itemTitleTemplate: '{{if false}}hidden{{end}}'", nil, "must render a non-empty single line"},
 		{"unmatched commit", "commitPattern: '^feat:'", nil, "does not match"},
-		{"bad section level", "sectionHeaderLevel: 7", nil, "maximum: got 7, want 6"},
-		{"bad item level", "itemHeaderLevel: 0", nil, "minimum: got 0, want 1"},
-		{"bad exclusion regex", "excludedPatterns: ['[']", nil, "invalid excludedPatterns[0]"},
+		{"bad section level", "sectionHeaderLevel: 7", nil, "sectionHeaderLevel must be"},
+		{"bad item level", "itemHeaderLevel: 0", nil, "itemHeaderLevel must be"},
+		{"bad exclusion regex", "excludedPatterns: ['[']", nil, "'excludedPatterns[0]' error parsing regexp"},
 		{"nested heading overflow", "itemHeaderLevel: 6\ncategories: [{name: Root, categories: [{name: Child, patterns: ['.*']}]}]", nil, "exceeds Markdown header level 6"},
-		{"title removed from YAML", "title: Release", nil, `additional property "title"`},
-		{"missing tag", "{}", []string{"--from", "missing"}, "resolve tag"},
+		{"title removed from YAML", "title: Release", nil, "invalid keys: title"},
+		{"missing tag", "{}", []string{"--from", "missing"}, "resolve revision"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.yaml != "" {
 				write(t, cfg, tt.yaml)
 			}
 			var stdout, stderr bytes.Buffer
-			args := append([]string{"--repo", dir, "--output", file}, tt.args...)
-			if code := Run(args, &stdout, &stderr, "test"); code != 1 || !strings.Contains(stderr.String(), tt.want) {
+			args := append([]string{"--repo", dir}, tt.args...)
+			if code := Run(append(args, file), &stdout, &stderr, "test"); code != 1 || !strings.Contains(stderr.String(), tt.want) {
 				t.Fatalf("exit %d, stderr %s", code, &stderr)
 			}
-			if strings.Contains(stderr.String(), "[ok]") {
-				t.Fatalf("generation failure must not log success: %s", &stderr)
+			if strings.Contains(stdout.String(), "[ok]") {
+				t.Fatalf("generation failure must not log success: %s", &stdout)
 			}
 			data, err := os.ReadFile(file)
-			if err != nil || string(data) != "keep existing notes" || stdout.Len() != 0 {
+			if err != nil || string(data) != "keep existing notes" {
 				t.Fatalf("generation failure changed output: %q, %v", data, err)
 			}
 		})
@@ -413,22 +396,21 @@ func TestWriteErrors(t *testing.T) {
 	dir := testutil.Repository(t)
 	testutil.Commit(t, dir, "initial")
 	write(t, filepath.Join(dir, config.DefaultName+".yaml"), "{}")
-	var stderr bytes.Buffer
-	if code := Run([]string{"--repo", dir}, brokenWriter{}, &stderr, "test"); code != 1 ||
-		!strings.Contains(stderr.String(), "write release notes") || strings.Contains(stderr.String(), "[ok]") {
-		t.Fatalf("expected stdout write error, got exit %d: %s", code, &stderr)
-	}
-	stderr.Reset()
-	if code := Run([]string{"--repo", dir, "--output", dir}, &bytes.Buffer{}, &stderr, "test"); code != 1 ||
-		!strings.Contains(stderr.String(), "write release notes") || strings.Contains(stderr.String(), "[ok]") {
+	var stdout, stderr bytes.Buffer
+	if code := Run([]string{"--repo", dir, dir}, &stdout, &stderr, "test"); code != 1 ||
+		!strings.Contains(stderr.String(), "write release notes") || strings.Contains(stdout.String(), "[ok]") {
 		t.Fatalf("expected file write error, got exit %d: %s", code, &stderr)
 	}
 }
 
-type brokenWriter struct{}
-
-func (brokenWriter) Write([]byte) (int, error) {
-	return 0, errors.New("writer unavailable")
+// runNotes runs the CLI with an output file in a temporary directory and returns the written notes.
+func runNotes(t *testing.T, args ...string) (code int, notes, stdout, stderr string) {
+	t.Helper()
+	output := filepath.Join(t.TempDir(), "notes.md")
+	var out, errOut bytes.Buffer
+	code = Run(append(args, output), &out, &errOut, "test")
+	data, _ := os.ReadFile(output)
+	return code, string(data), out.String(), errOut.String()
 }
 
 func write(t *testing.T, path, text string) {

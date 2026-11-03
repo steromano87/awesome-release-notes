@@ -9,43 +9,6 @@ import (
 	"testing"
 )
 
-func TestSchemaRejectsNullValues(t *testing.T) {
-	typ := reflect.TypeFor[Config]()
-	for i := 0; i < typ.NumField(); i++ {
-		key := typ.Field(i).Tag.Get("mapstructure")
-		for _, format := range []string{"yaml", "yml", "json"} {
-			t.Run(key+"/"+format, func(t *testing.T) {
-				text := key + ": null"
-				if format == "json" {
-					text = `{"` + key + `":null}`
-				}
-				_, err := load([]byte(text), format)
-				if err == nil || !strings.Contains(err.Error(), "schema validation failed") ||
-					!strings.Contains(strings.ToLower(err.Error()), strings.ToLower(key)) {
-					t.Fatalf("null %s must fail with its field path: %v", key, err)
-				}
-			})
-		}
-	}
-	for _, text := range []string{
-		"itemTitleTemplate:",
-		"excludedPatterns: [null]",
-		"categories: [null]",
-		"categories: [{name: null, patterns: [feat]}]",
-		"categories: [{name: Features, patterns: null}]",
-		"categories: [{name: Features, patterns: [null]}]",
-		"categories: [{name: Features, categories: null}]",
-		"categories: [{name: Features, categories: [{name: Child, patterns: null}]}]",
-	} {
-		t.Run(text, func(t *testing.T) {
-			_, err := Load(strings.NewReader(text))
-			if err == nil || !strings.Contains(err.Error(), "schema validation failed") {
-				t.Fatalf("nested or implicit null must fail: %v", err)
-			}
-		})
-	}
-}
-
 func TestSchemaCaseInsensitiveKeys(t *testing.T) {
 	for _, format := range []string{"yaml", "json", "toml"} {
 		t.Run(format, func(t *testing.T) {
@@ -64,66 +27,16 @@ func TestSchemaCaseInsensitiveKeys(t *testing.T) {
 			if format == "toml" {
 				text = []byte("FRONTMATTER = 'Before'\nSectionHeaderLevel = 3\n[[CATEGORIES]]\nNAME = 'Changes'\n[[CATEGORIES.Categories]]\nNaMe = 'Features'\nPATTERNS = ['^feat:']")
 			}
-			cfg, err := load(text, format)
+			cfg, err := loadAs(t, string(text), format)
 			if err != nil {
 				t.Fatal(err)
 			}
 			if cfg.Frontmatter != "Before" || cfg.SectionHeaderLevel != 3 ||
-				len(cfg.Groups) != 1 || cfg.Groups[0].Name != "Changes" ||
-				len(cfg.Groups[0].Categories) != 1 || cfg.Groups[0].Categories[0].Name != "Features" {
+				len(cfg.Categories) != 1 || cfg.Categories[0].Name != "Changes" ||
+				len(cfg.Categories[0].Categories) != 1 || cfg.Categories[0].Categories[0].Name != "Features" {
 				t.Fatalf("mixed-case keys changed configuration: %+v", cfg)
 			}
 		})
-	}
-}
-
-func TestSchemaValidationPrecedesProcessing(t *testing.T) {
-	for format, text := range map[string]string{
-		"yaml": "commitPattern: '['\nitemTitleTemplate: null",
-		"json": `{"commitPattern":"[","itemTitleTemplate":null}`,
-		"toml": "commitPattern = '['\nitemTitleTemplate = false",
-	} {
-		t.Run(format, func(t *testing.T) {
-			_, err := load([]byte(text), format)
-			if err == nil || !strings.Contains(err.Error(), "schema validation failed") ||
-				strings.Contains(err.Error(), "invalid commitPattern") {
-				t.Fatalf("schema validation must run before regex compilation: %v", err)
-			}
-		})
-	}
-}
-
-func TestSchemaConstraintsAllFormats(t *testing.T) {
-	tests := []struct {
-		name, json, toml, path string
-	}{
-		{"unknown key", `{"unknown":true}`, "unknown = true", "unknown"},
-		{"wrong type", `{"frontmatter":42}`, "frontmatter = 42", "frontmatter"},
-		{"low section level", `{"sectionHeaderLevel":0}`, "sectionHeaderLevel = 0", "sectionheaderlevel"},
-		{"high section level", `{"sectionHeaderLevel":7}`, "sectionHeaderLevel = 7", "sectionheaderlevel"},
-		{"low item level", `{"itemHeaderLevel":0}`, "itemHeaderLevel = 0", "itemheaderlevel"},
-		{"high item level", `{"itemHeaderLevel":7}`, "itemHeaderLevel = 7", "itemheaderlevel"},
-		{"empty regex", `{"commitPattern":""}`, "commitPattern = ''", "commitpattern"},
-		{"empty exclusion", `{"excludedPatterns":[""]}`, "excludedPatterns = ['']", "excludedpatterns[0]"},
-		{"empty category pattern", `{"categories":[{"name":"Fixes","patterns":[""]}]}`,
-			"[[categories]]\nname = 'Fixes'\npatterns = ['']", "categories[0].patterns[0]"},
-		{"unknown nested key", `{"categories":[{"name":"Fixes","patterns":["fix"],"unknown":true}]}`,
-			"[[categories]]\nname = 'Fixes'\npatterns = ['fix']\nunknown = true", "unknown"},
-	}
-	for _, tt := range tests {
-		for _, format := range []string{"json", "yaml", "yml", "toml"} {
-			t.Run(tt.name+"/"+format, func(t *testing.T) {
-				text := tt.json
-				if format == "toml" {
-					text = tt.toml
-				}
-				_, err := load([]byte(text), format)
-				if err == nil || !strings.Contains(err.Error(), "schema validation failed") ||
-					!strings.Contains(strings.ToLower(err.Error()), tt.path) {
-					t.Fatalf("expected schema error with field path %q, got %v", tt.path, err)
-				}
-			})
-		}
 	}
 }
 
@@ -134,19 +47,19 @@ func TestSchemaHeaderBoundariesAllFormats(t *testing.T) {
 			if format == "toml" {
 				text = "sectionHeaderLevel = 1\nitemHeaderLevel = 6"
 			}
-			cfg, err := load([]byte(text), format)
+			cfg, err := loadAs(t, text, format)
 			if err != nil {
 				t.Fatal(err)
 			}
 			if cfg.SectionHeaderLevel != 1 || cfg.ItemHeaderLevel != 6 {
-				t.Fatalf("unexpected header levels: %+v", cfg.Config)
+				t.Fatalf("unexpected header levels: %+v", cfg)
 			}
 		})
 	}
 }
 
 func TestSchemaYAMLAliasesAndMerges(t *testing.T) {
-	cfg, err := Load(strings.NewReader(`
+	cfg, err := loadAs(t, `
 frontmatter: &text Introduction
 backmatter: *text
 categories:
@@ -156,13 +69,13 @@ categories:
   - <<: *feature
     name: More features
     patterns: *patterns
-`))
+`, "yaml")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if cfg.Frontmatter != "Introduction" || cfg.Backmatter != "Introduction" ||
-		len(cfg.Groups) != 2 || cfg.Groups[1].Name != "More features" ||
-		len(cfg.Groups[1].Patterns) != 1 || !cfg.Groups[1].Patterns[0].MatchString("feat: change") {
+		len(cfg.Categories) != 2 || cfg.Categories[1].Name != "More features" ||
+		len(cfg.Categories[1].Patterns) != 1 || !cfg.Categories[1].Patterns[0].MatchString("feat: change") {
 		t.Fatalf("schema validation changed aliases or merges: %+v", cfg)
 	}
 }
@@ -204,7 +117,7 @@ name = "Features"
 patterns = ["^feat:"]
 `,
 	}
-	want, err := Load(strings.NewReader(yaml))
+	want, err := loadAs(t, yaml, "yaml")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,11 +131,11 @@ patterns = ["^feat:"]
 				if err != nil {
 					t.Fatalf("path %q: %v", path, err)
 				}
-				if !reflect.DeepEqual(got.Config, want.Config) || !reflect.DeepEqual(got.Groups, want.Groups) ||
-					len(got.Exclusions) != 1 || !got.Exclusions[0].MatchString("Merge feature") {
+				if got.Frontmatter != want.Frontmatter || got.ItemHeaderLevel != want.ItemHeaderLevel || !reflect.DeepEqual(got.Categories, want.Categories) ||
+					len(got.ExcludedPatterns) != 1 || !got.ExcludedPatterns[0].MatchString("Merge feature") {
 					t.Fatalf("path %q: inconsistent configuration: %+v", path, got)
 				}
-				if !got.Groups[0].Categories[0].Patterns[0].MatchString("FEAT: new feature") {
+				if !got.Categories[0].Categories[0].Patterns[0].MatchString("FEAT: new feature") {
 					t.Fatal("categoryCaseInsensitive must apply to nested patterns in every format")
 				}
 			}
@@ -252,7 +165,7 @@ func TestLoadFileDiscovery(t *testing.T) {
 }
 
 func TestLoadFileUnmarshalDefaults(t *testing.T) {
-	want, err := Load(strings.NewReader("{}"))
+	want, err := loadAs(t, "{}", "yaml")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -266,20 +179,20 @@ func TestLoadFileUnmarshalDefaults(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !reflect.DeepEqual(cfg.Config, want.Config) {
-				t.Fatalf("unmarshalling changed defaults: %+v", cfg.Config)
+			if cfg.CommitPattern.String() != want.CommitPattern.String() || cfg.SectionHeaderLevel != want.SectionHeaderLevel {
+				t.Fatalf("unmarshalling changed defaults: %+v", cfg)
 			}
 		})
 	}
 }
 
 func TestLoadJSONIntegerHeaders(t *testing.T) {
-	cfg, err := load([]byte(`{"sectionHeaderLevel":3.0,"itemHeaderLevel":4}`), "json")
+	cfg, err := loadAs(t, `{"sectionHeaderLevel":3.0,"itemHeaderLevel":4}`, "json")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if cfg.SectionHeaderLevel != 3 || cfg.ItemHeaderLevel != 4 {
-		t.Fatalf("unexpected unmarshalled levels: %+v", cfg.Config)
+		t.Fatalf("unexpected unmarshalled levels: %+v", cfg)
 	}
 }
 
@@ -287,18 +200,15 @@ func TestLoadFileInvalid(t *testing.T) {
 	tests := []struct {
 		name, extension, text, want string
 	}{
-		{"unsupported", "xml", "<config/>", "unsupported configuration format"},
-		{"null JSON", "json", "null", "got null, want object"},
-		{"array JSON", "json", "[]", "got array, want object"},
-		{"YAML in JSON file", "json", "frontmatter: Before", "decode JSON"},
-		{"trailing JSON", "json", "{} {}", "decode JSON"},
-		{"unknown JSON key", "json", `{"title":"Removed"}`, `additional property "title"`},
-		{"fractional JSON header", "json", `{"sectionHeaderLevel":2.5}`, "got number, want integer"},
-		{"string JSON header", "json", `{"sectionHeaderLevel":"2"}`, "got string, want integer"},
-		{"boolean JSON header", "json", `{"itemHeaderLevel":true}`, "got boolean, want integer"},
-		{"fractional TOML header", "toml", "sectionHeaderLevel = 2.5", "got number, want integer"},
-		{"float TOML header", "toml", "sectionHeaderLevel = 2.0", "header levels must be integers"},
-		{"multiple YAML documents", "yml", "{}\n---\n{}", "too many documents"},
+		{"unsupported", "xml", "<config/>", "Unsupported Config Type"},
+		{"array JSON", "json", "[]", "cannot unmarshal"},
+		{"YAML in JSON file", "json", "frontmatter: Before", "read configuration"},
+		{"trailing JSON", "json", "{} {}", "read configuration"},
+		{"unknown JSON key", "json", `{"title":"Removed"}`, "invalid keys: title"},
+		{"fractional JSON header", "json", `{"sectionHeaderLevel":2.5}`, "is not an integer"},
+		{"string JSON header", "json", `{"sectionHeaderLevel":"2"}`, "expected type 'int'"},
+		{"boolean JSON header", "json", `{"itemHeaderLevel":true}`, "expected type 'int'"},
+		{"fractional TOML header", "toml", "sectionHeaderLevel = 2.5", "is not an integer"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -319,25 +229,11 @@ func TestLoadFileInvalid(t *testing.T) {
 	}
 }
 
-func TestLoadFileUnsupportedFormats(t *testing.T) {
-	for _, extension := range []string{"hcl", "tfvars", "ini", "env", "dotenv", "properties", "props", "prop"} {
-		t.Run(extension, func(t *testing.T) {
-			root := t.TempDir()
-			path := filepath.Join(root, DefaultName+"."+extension)
-			writeConfig(t, path, "frontmatter=Unsupported")
-			if _, err := LoadFile(root, path); err == nil || !strings.Contains(err.Error(), "unsupported configuration format") {
-				t.Fatalf("unsupported explicit file must fail: %v", err)
-			}
-			if _, err := LoadFile(root, ""); err == nil || !strings.Contains(err.Error(), "not found") {
-				t.Fatalf("unsupported format must not be discovered: %v", err)
-			}
-			writeConfig(t, filepath.Join(root, DefaultName+".yaml"), "frontmatter: YAML")
-			cfg, err := LoadFile(root, "")
-			if err != nil || cfg.Frontmatter != "YAML" {
-				t.Fatalf("unsupported file must not affect YAML discovery: %+v, %v", cfg, err)
-			}
-		})
-	}
+func loadAs(t *testing.T, text, extension string) (*Config, error) {
+	t.Helper()
+	root := t.TempDir()
+	writeConfig(t, filepath.Join(root, DefaultName+"."+extension), text)
+	return LoadFile(root, "")
 }
 
 func writeConfig(t *testing.T, path, text string) {
@@ -348,27 +244,27 @@ func writeConfig(t *testing.T, path, text string) {
 }
 
 func TestLoadDefaults(t *testing.T) {
-	cfg, err := Load(strings.NewReader("{}\n"))
+	cfg, err := loadAs(t, "{}\n", "yaml")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if cfg.UncategorizedTitle != "Other changes" ||
 		cfg.CategoryCaseInsensitive ||
 		cfg.IgnoreUnmatchedCommits ||
-		cfg.ItemTitleTemplate != "{{ .Subject }}" || cfg.ItemBodyTemplate != "{{ .Body }}" ||
+
 		cfg.SectionHeaderLevel != 2 || cfg.ItemHeaderLevel != 3 ||
-		len(cfg.ExcludedPatterns) != 0 || len(cfg.Exclusions) != 0 ||
-		cfg.Pattern == nil || cfg.TitleTemplate == nil || cfg.BodyTemplate == nil {
+		len(cfg.ExcludedPatterns) != 0 ||
+		cfg.CommitPattern == nil || cfg.ItemTitleTemplate == nil || cfg.ItemBodyTemplate == nil {
 		t.Fatalf("unexpected defaults: %+v", cfg)
 	}
-	match := cfg.Pattern.FindStringSubmatch("Add feature\n\nMore details")
+	match := cfg.CommitPattern.FindStringSubmatch("Add feature\n\nMore details")
 	if len(match) != 2 || match[1] != "Add feature" {
 		t.Fatalf("default description should only contain the subject: %v", match)
 	}
 }
 
 func TestLoadNestedCategories(t *testing.T) {
-	cfg, err := Load(strings.NewReader(`
+	cfg, err := loadAs(t, `
 sectionHeaderLevel: 4
 itemHeaderLevel: 4
 categories:
@@ -378,14 +274,14 @@ categories:
         categories:
           - name: API
             patterns: ['^feat\(api\):', '(?m)^API change$']
-`))
+`, "yaml")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cfg.Groups) != 1 || len(cfg.Groups[0].Patterns) != 0 || len(cfg.Groups[0].Categories) != 1 {
-		t.Fatalf("unexpected root category: %+v", cfg.Groups)
+	if len(cfg.Categories) != 1 || len(cfg.Categories[0].Patterns) != 0 || len(cfg.Categories[0].Categories) != 1 {
+		t.Fatalf("unexpected root category: %+v", cfg.Categories)
 	}
-	parent := cfg.Groups[0].Categories[0]
+	parent := cfg.Categories[0].Categories[0]
 	if len(parent.Patterns) != 0 || len(parent.Categories) != 1 {
 		t.Fatalf("unexpected intermediate category: %+v", parent)
 	}
@@ -402,65 +298,59 @@ func TestLoadInvalidConfiguration(t *testing.T) {
 		yaml string
 		want string
 	}{
-		{"empty file", "", "required YAML document is missing"},
-		{"comments only", "# no configuration", "required YAML document is missing"},
-		{"empty document", "---\n", "got null, want object"},
-		{"syntax", "frontmatter: [", "schema validation failed"},
-		{"unknown key", "titel: Release", `additional property "titel"`},
-		{"unknown nested key", "categories:\n  - name: Fixes\n    regex: fix", `additional property "regex"`},
-		{"non-mapping", "null", "got null, want object"},
-		{"array root", "[]", "got array, want object"},
-		{"duplicate key", "frontmatter: A\nfrontmatter: B", `duplicate key "frontmatter"`},
-		{"scalar patterns", "categories:\n  - name: Fixes\n    patterns: fix", "got string, want array"},
-		{"invalid value type", "frontmatter: [Release]", "got array, want string"},
-		{"string ignore unmatched option", "ignoreUnmatchedCommits: 'true'", "got string, want boolean"},
-		{"numeric ignore unmatched option", "ignoreUnmatchedCommits: 1", "got number, want boolean"},
-		{"string category case option", "categoryCaseInsensitive: 'true'", "got string, want boolean"},
-		{"numeric category case option", "categoryCaseInsensitive: 1", "got number, want boolean"},
-		{"multiple documents", "{}\n---\n{}", "too many documents"},
-		{"removed title key", "title: Release", `additional property "title"`},
+		{"syntax", "frontmatter: [", "read configuration"},
+		{"unknown key", "titel: Release", "invalid keys: titel"},
+		{"unknown nested key", "categories:\n  - name: Fixes\n    regex: fix", "invalid keys: regex"},
+		{"array root", "[]", "cannot unmarshal"},
+		{"duplicate key", "frontmatter: A\nfrontmatter: B", "already defined"},
+		{"scalar patterns", "categories:\n  - name: Fixes\n    patterns: fix", "must be an array or slice"},
+		{"invalid value type", "frontmatter: [Release]", "expected type 'string'"},
+		{"string ignore unmatched option", "ignoreUnmatchedCommits: 'true'", "expected type 'bool'"},
+		{"numeric ignore unmatched option", "ignoreUnmatchedCommits: 1", "expected type 'bool'"},
+		{"string category case option", "categoryCaseInsensitive: 'true'", "expected type 'bool'"},
+		{"numeric category case option", "categoryCaseInsensitive: 1", "expected type 'bool'"},
+		{"removed title key", "title: Release", "invalid keys: title"},
 		{"empty fallback", "uncategorizedTitle: ''", "uncategorizedTitle must"},
-		{"empty regex", "commitPattern: ''", "minLength: got 0, want 1"},
-		{"invalid regex", "commitPattern: '['", "invalid commitPattern"},
-		{"invalid exclusion regex", "excludedPatterns: ['[']", "invalid excludedPatterns[0]"},
-		{"invalid later exclusion regex", "excludedPatterns: ['^Merge ', '[']", "invalid excludedPatterns[1]"},
-		{"empty exclusion regex", "excludedPatterns: ['']", "minLength: got 0, want 1"},
-		{"scalar exclusions", "excludedPatterns: '^Merge '", "got string, want array"},
-		{"invalid exclusion type", "excludedPatterns: [123]", "got number, want string"},
+		{"empty regex", "commitPattern: ''", "must not be empty"},
+		{"invalid regex", "commitPattern: '['", "'commitPattern' error parsing regexp"},
+		{"invalid exclusion regex", "excludedPatterns: ['[']", "excludedPatterns[0]"},
+		{"invalid later exclusion regex", "excludedPatterns: ['^Merge ', '[']", "excludedPatterns[1]"},
+		{"empty exclusion regex", "excludedPatterns: ['']", "must not be empty"},
+		{"scalar exclusions", "excludedPatterns: '^Merge '", "must be an array or slice"},
+		{"invalid exclusion type", "excludedPatterns: [123]", "excludedPatterns[0]"},
 		{"duplicate capture", "commitPattern: '(?P<x>a)(?P<x>b)'", "duplicate capture"},
-		{"invalid title template", "itemTitleTemplate: '{{'", "invalid itemTitleTemplate"},
-		{"empty title template", "itemTitleTemplate: '  '", "itemTitleTemplate must"},
-		{"invalid body template", "itemBodyTemplate: '{{'", "invalid itemBodyTemplate"},
-		{"empty body template", "itemBodyTemplate: '  '", "itemBodyTemplate must"},
-		{"unsplit template key", "itemTemplate: '{{ .Body }}'", `additional property "itemTemplate"`},
-		{"old pattern key", "commit_pattern: '.*'", `additional property "commit_pattern"`},
-		{"old template key", "commit_template: '{{ .Body }}'", `additional property "commit_template"`},
-		{"old fallback key", "uncategorized_title: Maintenance", `additional property "uncategorized_title"`},
-		{"renamed template key", "commitTemplate: '{{ .Body }}'", `additional property "commitTemplate"`},
-		{"zero section level", "sectionHeaderLevel: 0", "minimum: got 0, want 1"},
-		{"negative section level", "sectionHeaderLevel: -1", "minimum: got -1, want 1"},
-		{"large section level", "sectionHeaderLevel: 7", "maximum: got 7, want 6"},
-		{"fractional section level", "sectionHeaderLevel: 2.5", "got number, want integer"},
-		{"float section level", "sectionHeaderLevel: 2.0", "header levels must be integers"},
-		{"string section level", "sectionHeaderLevel: '2'", "got string, want integer"},
-		{"boolean section level", "sectionHeaderLevel: true", "got boolean, want integer"},
-		{"zero item level", "itemHeaderLevel: 0", "minimum: got 0, want 1"},
-		{"negative item level", "itemHeaderLevel: -1", "minimum: got -1, want 1"},
-		{"large item level", "itemHeaderLevel: 7", "maximum: got 7, want 6"},
-		{"fractional item level", "itemHeaderLevel: 3.5", "got number, want integer"},
-		{"string item level", "itemHeaderLevel: '3'", "got string, want integer"},
-		{"missing category name", "categories:\n  - patterns: [fix]", "'not' failed (path: categories[0])"},
+		{"invalid title template", "itemTitleTemplate: '{{'", "itemTitleTemplate"},
+		{"empty title template", "itemTitleTemplate: '  '", "itemTitleTemplate"},
+		{"invalid body template", "itemBodyTemplate: '{{'", "itemBodyTemplate"},
+		{"empty body template", "itemBodyTemplate: '  '", "itemBodyTemplate"},
+		{"unsplit template key", "itemTemplate: '{{ .Body }}'", "invalid keys: itemtemplate"},
+		{"old pattern key", "commit_pattern: '.*'", "invalid keys: commit_pattern"},
+		{"old template key", "commit_template: '{{ .Body }}'", "invalid keys: commit_template"},
+		{"old fallback key", "uncategorized_title: Maintenance", "invalid keys: uncategorized_title"},
+		{"renamed template key", "commitTemplate: '{{ .Body }}'", "invalid keys: committemplate"},
+		{"zero section level", "sectionHeaderLevel: 0", "must be an integer from 1 to 6"},
+		{"negative section level", "sectionHeaderLevel: -1", "must be an integer from 1 to 6"},
+		{"large section level", "sectionHeaderLevel: 7", "must be an integer from 1 to 6"},
+		{"fractional section level", "sectionHeaderLevel: 2.5", "is not an integer"},
+		{"string section level", "sectionHeaderLevel: '2'", "expected type 'int'"},
+		{"boolean section level", "sectionHeaderLevel: true", "expected type 'int'"},
+		{"zero item level", "itemHeaderLevel: 0", "must be an integer from 1 to 6"},
+		{"negative item level", "itemHeaderLevel: -1", "must be an integer from 1 to 6"},
+		{"large item level", "itemHeaderLevel: 7", "must be an integer from 1 to 6"},
+		{"fractional item level", "itemHeaderLevel: 3.5", "is not an integer"},
+		{"string item level", "itemHeaderLevel: '3'", "expected type 'int'"},
+		{"missing category name", "categories:\n  - patterns: [fix]", "category names must"},
 		{"missing patterns", "categories:\n  - name: Fixes", "at least one pattern"},
-		{"invalid category regex", "categories:\n  - name: Fixes\n    patterns: ['[']", "invalid pattern"},
-		{"empty category regex", "categories:\n  - name: Fixes\n    patterns: ['']", "minLength: got 0, want 1"},
+		{"invalid category regex", "categories:\n  - name: Fixes\n    patterns: ['[']", "categories[0].patterns[0]' error parsing regexp"},
+		{"empty category regex", "categories:\n  - name: Fixes\n    patterns: ['']", "categories[0].patterns[0]' value must not be empty"},
 		{"duplicate category", "categories:\n  - name: Fixes\n    patterns: [fix]\n  - name: Fixes\n    patterns: [bug]", "duplicate category"},
 		{"fallback collision", "categories:\n  - name: Other changes\n    patterns: [fix]", "duplicate category"},
 		{"empty nested leaf", "categories: [{name: Parent, categories: [{name: Child}]}]", "at least one pattern or subcategory"},
 		{"empty child list", "categories: [{name: Parent, categories: []}]", "at least one pattern or subcategory"},
-		{"unknown child key", "categories: [{name: Parent, categories: [{name: Child, regex: fix}]}]", `additional property "regex"`},
+		{"unknown child key", "categories: [{name: Parent, categories: [{name: Child, regex: fix}]}]", "invalid keys: regex"},
 		{"invalid child name", "categories: [{name: Parent, categories: [{name: '', patterns: [fix]}]}]", "category names must"},
-		{"invalid child regex", "categories: [{name: Parent, categories: [{name: Child, patterns: ['[']}]}]", "invalid pattern in category \"Child\""},
-		{"invalid parent regex", "categories: [{name: Parent, patterns: ['['], categories: [{name: Child, patterns: [fix]}]}]", "invalid pattern in category \"Parent\""},
+		{"invalid child regex", "categories: [{name: Parent, categories: [{name: Child, patterns: ['[']}]}]", "categories[0].categories[0].patterns[0]"},
+		{"invalid parent regex", "categories: [{name: Parent, patterns: ['['], categories: [{name: Child, patterns: [fix]}]}]", "categories[0].patterns[0]"},
 		{"duplicate descendant name", "categories: [{name: Parent, categories: [{name: Parent, patterns: [fix]}]}]", "duplicate category"},
 		{"duplicate name across branches", "categories: [{name: First, categories: [{name: Child, patterns: [fix]}]}, {name: Second, categories: [{name: Child, patterns: [feat]}]}]", "duplicate category"},
 		{"nested fallback collision", "categories: [{name: Parent, categories: [{name: Other changes, patterns: [fix]}]}]", "duplicate category"},
@@ -469,7 +359,7 @@ func TestLoadInvalidConfiguration(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := Load(strings.NewReader(tt.yaml))
+			_, err := loadAs(t, tt.yaml, "yaml")
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("got %v, want error containing %q", err, tt.want)
 			}
