@@ -35,7 +35,7 @@ categories:
 		commit("ccc", "feat: first match only", ""),
 		commit("ddd", "chore: update dependencies", "Update the YAML parser."),
 	}
-	out, err := Render(cfg, "Release 1.2", commits)
+	out, err := NewRenderer(cfg).Render("Release 1.2", commits)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,14 +51,14 @@ categories:
 
 func TestRenderDefaultsAndEmptyRange(t *testing.T) {
 	cfg := load(t, "{}\n")
-	out, err := Render(cfg, "Release", []gitlog.Commit{commit("abc", "Simple subject", "Body")})
+	out, err := NewRenderer(cfg).Render("Release", []gitlog.Commit{commit("abc", "Simple subject", "Body")})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if string(out) != "# Release\n\n## Other changes\n\n### Simple subject\n\nBody\n" {
 		t.Fatalf("unexpected default output: %s", out)
 	}
-	out, err = Render(cfg, "Release", nil)
+	out, err = NewRenderer(cfg).Render("Release", nil)
 	if err != nil || string(out) != "# Release\n" {
 		t.Fatalf("unexpected empty range: %q, %v", out, err)
 	}
@@ -81,7 +81,7 @@ func TestRenderLineEndings(t *testing.T) {
 				if !empty {
 					commits = []gitlog.Commit{commit("abc", "A change", "Paragraph"+tt.body+tt.body+"- item"+tt.body+"```text"+tt.body+"code"+tt.body+"```")}
 				}
-				out, err := Render(cfg, "Release", commits)
+				out, err := NewRenderer(cfg).Render("Release", commits)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -123,7 +123,7 @@ categories:
 			if cfg.CommitPattern.MatchString("FEAT: general") || cfg.ExcludedPatterns[0].MatchString("feat: skip") {
 				t.Fatal("category option must not affect parsing or exclusions")
 			}
-			out, err := Render(cfg, "Release", []gitlog.Commit{
+			out, err := NewRenderer(cfg).Render("Release", []gitlog.Commit{
 				commit("aaa", "feat: GENERAL", ""),
 				commit("bbb", "feat: endpoint", "API DETAILS"),
 				commit("ccc", "feat: skip", ""),
@@ -154,7 +154,7 @@ categories:
   - name: Features
     patterns: ['^feat:']
 `, section, item))
-				out, err := Render(cfg, "Release notes", []gitlog.Commit{
+				out, err := NewRenderer(cfg).Render("Release notes", []gitlog.Commit{
 					commit("aaa", "feat: original subject", "Feature details."),
 					commit("bbb", "Uncategorized original subject", "Other details."),
 				})
@@ -197,7 +197,7 @@ categories:
   - name: Later features
     patterns: ['^feat']
 `)
-	out, err := Render(cfg, "Release", []gitlog.Commit{
+	out, err := NewRenderer(cfg).Render("Release", []gitlog.Commit{
 		commit("aaa", "fix: prevent crash", "Fix details."),
 		commit("bbb", "feat(api): first endpoint", "First API details."),
 		commit("ccc", "feat: general feature", "General details."),
@@ -248,7 +248,7 @@ categories:
 			for i, subject := range tt.subjects {
 				commits = append(commits, commit(fmt.Sprint(i), subject, ""))
 			}
-			out, err := Render(cfg, "Release", commits)
+			out, err := NewRenderer(cfg).Render("Release", commits)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -276,7 +276,7 @@ categories:
       - name: Later child
         patterns: ['^feat:']
 `)
-	out, err := Render(cfg, "Release", []gitlog.Commit{commit("abc", "feat: first sibling wins", "")})
+	out, err := NewRenderer(cfg).Render("Release", []gitlog.Commit{commit("abc", "feat: first sibling wins", "")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -297,7 +297,7 @@ categories:
           - name: Leaf
             patterns: ['.*']
 `)
-	out, err := Render(cfg, "Release", []gitlog.Commit{commit("abc", "feat: deepest level", "")})
+	out, err := NewRenderer(cfg).Render("Release", []gitlog.Commit{commit("abc", "feat: deepest level", "")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -310,7 +310,7 @@ categories:
 func TestRenderWithoutMatchingExclusions(t *testing.T) {
 	for _, text := range []string{"{}", "excludedPatterns: []", "excludedPatterns: ['^not-present$']"} {
 		cfg := load(t, text)
-		out, err := Render(cfg, "Release", []gitlog.Commit{
+		out, err := NewRenderer(cfg).Render("Release", []gitlog.Commit{
 			commit("aaa", "feat: keep", "Feature details."),
 			commit("bbb", "Merge branch 'feature'", ""),
 			commit("ccc", "chore: keep", "Maintenance details."),
@@ -341,7 +341,7 @@ categories:
   - name: Maintenance
     patterns: ['^chore:']
 `)
-	out, err := Render(cfg, "Release", []gitlog.Commit{
+	out, err := NewRenderer(cfg).Render("Release", []gitlog.Commit{
 		commit("aaa", "feat: first", "First details."),
 		commit("bbb", "Merge branch 'feature'", ""),
 		commit("ccc", "chore: release", "Maintenance details."),
@@ -371,7 +371,7 @@ categories:
   - name: Changes
     patterns: ['.*']
 `)
-	out, err := Render(cfg, "Release", []gitlog.Commit{
+	out, err := NewRenderer(cfg).Render("Release", []gitlog.Commit{
 		commit("aaa", "feat: hidden", "Details."),
 		commit("bbb", "", ""),
 	})
@@ -380,6 +380,21 @@ categories:
 	}
 	if string(out) != "# Release\n\nIntroduction.\n\nThank you.\n" {
 		t.Fatalf("expected only release title, frontmatter and backmatter: %s", out)
+	}
+}
+
+func TestRenderMatterTemplates(t *testing.T) {
+	cfg := load(t, "frontmatter: 'Intro to {{ .Title }}'\nbackmatter: '{{ if .Title }}Bye {{ .Title }}{{ end }}'\n")
+	out, err := NewRenderer(cfg).Render("Release 1", nil)
+	if err != nil || string(out) != "# Release 1\n\nIntro to Release 1\n\nBye Release 1\n" {
+		t.Fatalf("unexpected output: %q, %v", out, err)
+	}
+	out, err = NewRenderer(cfg).Render("", nil)
+	if err != nil || string(out) != "Intro to \n" {
+		t.Fatalf("expected no title and blank backmatter omitted: %q, %v", out, err)
+	}
+	if _, err := NewRenderer(load(t, "frontmatter: '{{ .Missing }}'")).Render("R", nil); err == nil {
+		t.Fatal("expected error for an unknown field")
 	}
 }
 
@@ -392,7 +407,7 @@ itemBodyTemplate: '{{.Hash}}|{{.ShortHash}}|{{.Subject}}|{{.Body}}|{{.Message}}|
 	item.Hash = "abcdef"
 	item.Author = "Developer"
 	item.Date = time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)
-	out, err := Render(cfg, "Release notes", []gitlog.Commit{item})
+	out, err := NewRenderer(cfg).Render("Release notes", []gitlog.Commit{item})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -417,7 +432,7 @@ func TestRenderItemContentAndDefaultTitle(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := load(t, fmt.Sprintf("itemBodyTemplate: %q\n", tt.template))
-			out, err := Render(cfg, "Release", []gitlog.Commit{commit("abc", "feat(api)!: Keep original title", tt.body)})
+			out, err := NewRenderer(cfg).Render("Release", []gitlog.Commit{commit("abc", "feat(api)!: Keep original title", tt.body)})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -451,7 +466,7 @@ itemBodyTemplate: '{{define "value"}}Custom body{{end}}{{template "value"}}'`, "
 			cfg := load(t, "commitPattern: '^feat\\((?P<scope>[^)]+)\\)!: (?P<description>[^\\n]+)'\n"+tt.yaml)
 			item := commit("abc", "feat(api)!: Add options", "Original body.\n\n- Keep Markdown.")
 			item.Author = "Developer"
-			out, err := Render(cfg, "Release notes", []gitlog.Commit{item})
+			out, err := NewRenderer(cfg).Render("Release notes", []gitlog.Commit{item})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -480,13 +495,13 @@ func TestRenderErrors(t *testing.T) {
 		{"carriage return in title", "itemTitleTemplate: \"first\\rsecond\"", "must render a non-empty single line"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := Render(load(t, tt.yaml), "Release", []gitlog.Commit{commit("abc", "chore: test", "")})
+			_, err := NewRenderer(load(t, tt.yaml)).Render("Release", []gitlog.Commit{commit("abc", "chore: test", "")})
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("got %v, want error containing %q", err, tt.want)
 			}
 		})
 	}
-	_, err := Render(load(t, "{}"), "Release", []gitlog.Commit{commit("abc", "", "Body")})
+	_, err := NewRenderer(load(t, "{}")).Render("Release", []gitlog.Commit{commit("abc", "", "Body")})
 	if err == nil || !strings.Contains(err.Error(), "empty subject") {
 		t.Fatalf("expected error for an empty item title, got %v", err)
 	}
@@ -514,7 +529,7 @@ categories:
 	for _, option := range []string{"", "ignoreUnmatchedCommits: false\n", "ignoreUnmatchedCommits: true\n"} {
 		t.Run(strings.TrimSpace(option), func(t *testing.T) {
 			cfg := load(t, option+base)
-			out, err := Render(cfg, "Release", commits)
+			out, err := NewRenderer(cfg).Render("Release", commits)
 			if !cfg.IgnoreUnmatchedCommits {
 				if err == nil || !strings.Contains(err.Error(), "does not match commitPattern") || out != nil {
 					t.Fatalf("expected unchanged error behavior, got %q, %v", out, err)
@@ -528,12 +543,12 @@ categories:
 		})
 	}
 	cfg := load(t, "ignoreUnmatchedCommits: true\nfrontmatter: Before\nbackmatter: After\n"+base)
-	out, err := Render(cfg, "Release", []gitlog.Commit{commits[0], commits[2], commits[3]})
+	out, err := NewRenderer(cfg).Render("Release", []gitlog.Commit{commits[0], commits[2], commits[3]})
 	if err != nil || string(out) != "# Release\n\nBefore\n\nAfter\n" {
 		t.Fatalf("unexpected output when all commits are filtered: %q, %v", out, err)
 	}
 	cfg = load(t, "ignoreUnmatchedCommits: true\nitemBodyTemplate: '{{.Fields.missing}}'\ncommitPattern: '^feat:'")
-	if _, err := Render(cfg, "Release", []gitlog.Commit{commits[1]}); err == nil || !strings.Contains(err.Error(), "itemBodyTemplate") {
+	if _, err := NewRenderer(cfg).Render("Release", []gitlog.Commit{commits[1]}); err == nil || !strings.Contains(err.Error(), "itemBodyTemplate") {
 		t.Fatalf("matching commits must still report template errors: %v", err)
 	}
 }

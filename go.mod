@@ -6,6 +6,7 @@ require (
 	github.com/go-git/go-git/v6 v6.0.0-beta.1
 	github.com/go-viper/mapstructure/v2 v2.5.0
 	github.com/spf13/cobra v1.10.2
+	github.com/spf13/pflag v1.0.10
 	github.com/spf13/viper v1.21.0
 )
 
@@ -243,7 +244,6 @@ require (
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/spf13/afero v1.15.0 // indirect
 	github.com/spf13/cast v1.10.0 // indirect
-	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/titanous/rocacheck v0.0.0-20171023193734-afe73141d399 // indirect
 	github.com/tomnomnom/linkheader v0.0.0-20180905144013-02ca5825eb80 // indirect

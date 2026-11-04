@@ -1,6 +1,6 @@
 version: 2
 
-project_name: arn-gen
+project_name: arn
 dist: dist
 
 before:
@@ -11,9 +11,9 @@ before:
     - go test ./...
 
 builds:
-  - id: arn-gen
+  - id: arn
     main: .
-    binary: "{{ .Os }}_{{ .Arch }}/arn-gen"
+    binary: "{{ .Os }}_{{ .Arch }}/arn"
     no_unique_dist_dir: true
     env:
       - CGO_ENABLED=0
@@ -27,7 +27,7 @@ builds:
     flags:
       - -trimpath
     ldflags:
-      - -s -w -X main.version={{ .Version }}
+      - -s -w -X awesome-release-notes/arn/cmd.version={{ .Version }}
     tags:
       - osusergo
       - netgo

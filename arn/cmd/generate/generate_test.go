@@ -1,20 +1,38 @@
-package cli
+package generate
 
 import (
 	"bytes"
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 
+	"awesome-release-notes/internal/cliutil"
 	"awesome-release-notes/internal/config"
 	"awesome-release-notes/internal/testutil"
 
 	git "github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/spf13/cobra"
 )
 
+// testRoot mimics the root command: persistent --repo, argument errors and log output.
+var testRoot = &cobra.Command{Use: "arn", SilenceErrors: true, SilenceUsage: true}
+
+func init() {
+	testRoot.PersistentFlags().String("repo", ".", "")
+	testRoot.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return cliutil.NewArgumentError(err) })
+	testRoot.AddCommand(Cmd)
+	log.SetPrefix("[arn] ")
+	log.SetFlags(0)
+}
+
+func run(args []string, stdout, stderr *bytes.Buffer) int {
+	log.SetOutput(stdout)
+	return testutil.Run(testRoot, args, stdout, stderr)
+}
 func TestProgressLogs(t *testing.T) {
 	for _, tt := range []struct {
 		name     string
@@ -65,7 +83,7 @@ func TestProgressLogs(t *testing.T) {
 			if len(lines) != 5 || stderr != "" {
 				t.Fatalf("expected repository, branch, tag, generation and success logs on stdout only: %s; stderr: %s", stdout, stderr)
 			}
-			repoPath, err := strconv.Unquote(strings.TrimPrefix(lines[0], "[arn-gen] [info] Repository: "))
+			repoPath, err := strconv.Unquote(strings.TrimPrefix(lines[0], "[arn] [info] Repository: "))
 			if err != nil {
 				t.Fatalf("invalid repository log: %q: %v", lines[0], err)
 			}
@@ -77,26 +95,26 @@ func TestProgressLogs(t *testing.T) {
 			if err != nil || !os.SameFile(loggedRoot, expectedRoot) {
 				t.Fatalf("repository log does not identify the Git root: %q, %v", repoPath, err)
 			}
-			wantBranch := `[arn-gen] [info] Running on branch: "main"`
+			wantBranch := `[arn] [info] Running on branch: "main"`
 			if tt.detached {
-				wantBranch = "[arn-gen] [info] Running on detached HEAD: " + hash
+				wantBranch = "[arn] [info] Running on detached HEAD: " + hash
 			}
 			if lines[1] != wantBranch {
 				t.Fatalf("unexpected branch log: %q", lines[1])
 			}
-			wantTag := "[arn-gen] [info] No reachable tag found; including all history from the first commit"
+			wantTag := "[arn] [info] No reachable tag found; including all history from the first commit"
 			if tt.tags {
 				tag := "v2"
 				if tt.from != "" {
 					tag = tt.from
 				}
-				wantTag = `[arn-gen] [info] Previous tag: "` + tag + `" (excluded from the commit range)`
+				wantTag = `[arn] [info] Previous tag: "` + tag + `" (excluded from the commit range)`
 			}
-			if lines[2] != wantTag || !strings.HasPrefix(lines[3], "[arn-gen] [info] Generating release notes from ") ||
-				!strings.HasPrefix(lines[4], "[arn-gen] [ok] Release notes generated successfully") {
+			if lines[2] != wantTag || !strings.HasPrefix(lines[3], "[arn] [info] Generating release notes from ") ||
+				!strings.HasPrefix(lines[4], "[arn] [ok] Release notes generated successfully") {
 				t.Fatalf("unexpected logs: %s", stdout)
 			}
-			if !strings.HasPrefix(notes, "# Release notes\n") || strings.Contains(notes, "[arn-gen]") || !strings.Contains(lines[4], "notes.md") {
+			if !strings.HasPrefix(notes, "# Release notes\n") || strings.Contains(notes, "[arn]") || !strings.Contains(lines[4], "notes.md") {
 				t.Fatalf("unexpected file output or logs: %q; %s", notes, stdout)
 			}
 		})
@@ -160,7 +178,7 @@ func TestGenerateConfigurationFormats(t *testing.T) {
 			output := filepath.Join(dir, "notes.md")
 			write(t, output, "keep existing notes")
 			var stdout, stderr bytes.Buffer
-			if code := Run([]string{"--repo", nested, output}, &stdout, &stderr, "test"); code != 1 || strings.Contains(stdout.String(), "[ok]") {
+			if code := run([]string{"generate", "--repo", nested, output}, &stdout, &stderr); code != 1 || strings.Contains(stdout.String(), "[ok]") {
 				t.Fatalf("invalid configuration must fail without success log: exit %d, %s", code, &stderr)
 			}
 			data, err := os.ReadFile(output)
@@ -189,9 +207,12 @@ func TestExampleConfiguration(t *testing.T) {
 	for _, message := range messages {
 		testutil.Commit(t, dir, message)
 	}
-	data, err := os.ReadFile(filepath.Join("..", "..", config.DefaultName+".yaml"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "..", config.DefaultName+".yaml"))
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !bytes.Equal(bytes.ReplaceAll(data, []byte("\r\n"), []byte("\n")), config.DefaultYAML) {
+		t.Fatal("internal/config/default.yaml must match the repository .release-notes.yaml")
 	}
 	write(t, filepath.Join(dir, config.DefaultName+".yaml"), string(data))
 	code, text, _, stderr := runNotes(t, "--repo", dir)
@@ -302,26 +323,23 @@ func TestRunArguments(t *testing.T) {
 		code int
 		text string
 	}{
-		{"version", []string{"--version"}, 0, "1.2.3"},
-		{"help", []string{"--help"}, 0, "Usage:"},
-		{"format", []string{"--format", "html", "out.md"}, 2, "unsupported format"},
-		{"missing output", nil, 2, "output file path is required"},
-		{"extra output", []string{"a.md", "b.md"}, 2, "output file path is required"},
-		{"unknown flag", []string{"--unknown"}, 2, "unknown flag"},
-		{"missing value", []string{"--from"}, 2, "flag needs an argument"},
-		{"missing title value", []string{"--title"}, 2, "flag needs an argument"},
-		{"empty title", []string{"out.md", "--title", ""}, 2, "--title must be a non-empty single line"},
-		{"whitespace title", []string{"out.md", "--title", " \t "}, 2, "--title must be a non-empty single line"},
-		{"multiline title", []string{"out.md", "--title", "Release\nnotes"}, 2, "--title must be a non-empty single line"},
-		{"carriage return title", []string{"out.md", "--title", "Release\rnotes"}, 2, "--title must be a non-empty single line"},
+		{"format", []string{"generate", "--format", "html", "out.md"}, 2, "unsupported format"},
+		{"missing output", []string{"generate"}, 2, "output file path is required"},
+		{"extra output", []string{"generate", "a.md", "b.md"}, 2, "output file path is required"},
+		{"unknown flag", []string{"generate", "--unknown"}, 2, "unknown flag"},
+		{"missing value", []string{"generate", "--from"}, 2, "flag needs an argument"},
+		{"missing title value", []string{"generate", "--title"}, 2, "flag needs an argument"},
+		{"whitespace title", []string{"generate", "out.md", "--title", " \t "}, 2, "--title must be a non-empty single line"},
+		{"multiline title", []string{"generate", "out.md", "--title", "Release\nnotes"}, 2, "--title must be a non-empty single line"},
+		{"carriage return title", []string{"generate", "out.md", "--title", "Release\rnotes"}, 2, "--title must be a non-empty single line"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
-			code := Run(tt.args, &stdout, &stderr, "1.2.3")
+			code := run(tt.args, &stdout, &stderr)
 			if code != tt.code || !strings.Contains(stdout.String()+stderr.String(), tt.text) {
 				t.Fatalf("exit %d, stdout %q, stderr %q", code, &stdout, &stderr)
 			}
-			if tt.code == 0 && strings.Contains(stdout.String(), "[arn-gen]") {
+			if tt.code == 0 && strings.Contains(stdout.String(), "[arn]") {
 				t.Fatalf("help/version must not emit progress logs: %s", &stdout)
 			}
 		})
@@ -334,13 +352,13 @@ func TestRunWithoutArguments(t *testing.T) {
 	write(t, filepath.Join(dir, config.DefaultName+".yaml"), "{}")
 	t.Chdir(dir)
 	var stdout, stderr bytes.Buffer
-	if code := Run([]string{"notes.md"}, &stdout, &stderr, "test"); code != 0 {
+	if code := run([]string{"generate", "notes.md"}, &stdout, &stderr); code != 0 {
 		t.Fatalf("exit %d: %s", code, &stderr)
 	}
-	if data, err := os.ReadFile("notes.md"); err != nil || !strings.HasPrefix(string(data), "# Release notes\n") {
+	if data, err := os.ReadFile("notes.md"); err != nil || !strings.HasPrefix(string(data), "## Other changes\n") {
 		t.Fatalf("output path must be relative to the working directory: %q, %v", data, err)
 	}
-	if code := Run(nil, &stdout, &stderr, "test"); code != 2 {
+	if code := run(nil, &stdout, &stderr); code != 0 || !strings.Contains(stdout.String(), "Usage:") {
 		t.Fatalf("nil args must not inherit the process arguments; exit %d", code)
 	}
 }
@@ -377,8 +395,8 @@ func TestGenerationErrorsDoNotOverwriteOutput(t *testing.T) {
 				write(t, cfg, tt.yaml)
 			}
 			var stdout, stderr bytes.Buffer
-			args := append([]string{"--repo", dir}, tt.args...)
-			if code := Run(append(args, file), &stdout, &stderr, "test"); code != 1 || !strings.Contains(stderr.String(), tt.want) {
+			args := append([]string{"generate", "--repo", dir}, tt.args...)
+			if code := run(append(args, file), &stdout, &stderr); code != 1 || !strings.Contains(stderr.String(), tt.want) {
 				t.Fatalf("exit %d, stderr %s", code, &stderr)
 			}
 			if strings.Contains(stdout.String(), "[ok]") {
@@ -397,7 +415,7 @@ func TestWriteErrors(t *testing.T) {
 	testutil.Commit(t, dir, "initial")
 	write(t, filepath.Join(dir, config.DefaultName+".yaml"), "{}")
 	var stdout, stderr bytes.Buffer
-	if code := Run([]string{"--repo", dir, dir}, &stdout, &stderr, "test"); code != 1 ||
+	if code := run([]string{"generate", "--repo", dir, dir}, &stdout, &stderr); code != 1 ||
 		!strings.Contains(stderr.String(), "write release notes") || strings.Contains(stdout.String(), "[ok]") {
 		t.Fatalf("expected file write error, got exit %d: %s", code, &stderr)
 	}
@@ -408,7 +426,7 @@ func runNotes(t *testing.T, args ...string) (code int, notes, stdout, stderr str
 	t.Helper()
 	output := filepath.Join(t.TempDir(), "notes.md")
 	var out, errOut bytes.Buffer
-	code = Run(append(args, output), &out, &errOut, "test")
+	code = run(append([]string{"generate", "--title", "Release notes"}, append(args, output)...), &out, &errOut)
 	data, _ := os.ReadFile(output)
 	return code, string(data), out.String(), errOut.String()
 }

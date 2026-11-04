@@ -1,6 +1,6 @@
-# arn-gen (awesome-release-notes)
+# arn (awesome-release-notes)
 
-`arn-gen` turns Git commit messages into Markdown release notes. It reads a
+`arn` turns Git commit messages into Markdown release notes. It reads a
 local repository through `HEAD`, groups commits into categories, and writes
 the result to a file.
 
@@ -23,16 +23,16 @@ output format; the CLI generates a document, not a published release.
 ## Install and run
 
 Download and extract the archive for your platform from the project's GitHub
-Releases. Put `arn-gen` (`arn-gen.exe` on Windows) on your `PATH`, then copy
+Releases. Put `arn` (`arn.exe` on Windows) on your `PATH`, then copy
 the included [`.release-notes.yaml`](.release-notes.yaml) to the root of your
-Git project.
+Git project, or run `arn init` inside it to create the same file.
 
 Run it from that project:
 
 ```shell
-arn-gen RELEASE_NOTES.md
-arn-gen --title "Release 1.3.0" --from v1.2.0 RELEASE_NOTES.md
-arn-gen --repo /path/to/project --config custom.yaml RELEASE_NOTES.md
+arn generate RELEASE_NOTES.md
+arn generate --title "Release 1.3.0" --from v1.2.0 RELEASE_NOTES.md
+arn generate --repo /path/to/project --config custom.yaml RELEASE_NOTES.md
 ```
 
 The first command saves notes for commits since the nearest reachable tag.
@@ -42,8 +42,8 @@ without it the command fails and generates nothing. Paths passed to `--repo`,
 `--config`, and the output file are relative to your current working directory.
 
 In PowerShell, use paths such as `--repo C:\Projects\my-project`. If the binary
-is in the current directory rather than on `PATH`, run `.\arn-gen.exe` on
-Windows or `./arn-gen` on Linux/macOS.
+is in the current directory rather than on `PATH`, run `.\arn.exe` on
+Windows or `./arn` on Linux/macOS.
 
 With the included configuration, a commit message such as:
 
@@ -76,7 +76,15 @@ an item heading.
 
 ## CLI options
 
-`arn-gen [flags] <output-file>`: the file is created or overwritten; its parent directory must exist.
+| Command | Purpose |
+| --- | --- |
+| `arn generate` | Generate the release notes. |
+| `arn init` | Write the default `.release-notes.yaml` to the repository root; fails if it already exists. |
+| `arn check` | Validate the configuration only. Accepts `--repo` and `--config`. |
+
+`--repo` applies to every command; the flags below belong to `arn generate`.
+
+`arn generate [flags] <output-file>`: the file is created or overwritten; its parent directory must exist.
 
 | Flag | Default | Purpose |
 | --- | --- | --- |
@@ -85,7 +93,7 @@ an item heading.
 | `--from` | Nearest reachable tag | Starting tag, hash, or revision (not a branch), excluded from the range. |
 | `--to` | `HEAD` | Ending revision (hash, branch, or tag), included in the range. |
 | `--format` | `markdown` | Output format; only `markdown` is supported. |
-| `--title` | `Release notes` | Non-empty, single-line release title. |
+| `--title` | None (no title heading) | Optional single-line release title. |
 | `--version` | | Print the binary version. |
 | `--help` | | Print usage. |
 
@@ -177,8 +185,8 @@ document: a blank value such as `itemTitleTemplate:` is null, not a default.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `frontmatter` | Empty | Literal Markdown between the release title and categories. |
-| `backmatter` | Empty | Literal Markdown after all categories. |
+| `frontmatter` | Empty | Markdown template (with `.Title`) between the release title and categories. |
+| `backmatter` | Empty | Markdown template (with `.Title`) after all categories. |
 | `commitPattern` | `^(?P<description>[^\n]+)` | Go regex for extracting fields from each commit message. |
 | `ignoreUnmatchedCommits` | `false` | Skip commits that do not match `commitPattern` instead of failing. |
 | `excludedPatterns` | Empty list | Regexes for excluding commits before parsing. Any match excludes the commit. |
@@ -326,17 +334,17 @@ leaves just the item heading.
 
 ## Output and errors
 
-`frontmatter` and `backmatter` are literal Markdown blocks, not templates or
-YAML metadata. The CLI separates document blocks with a blank line and ends
+`frontmatter` and `backmatter` are Markdown blocks rendered as Go templates
+with the `.Title` field (empty without `--title`), e.g. `Notes for {{ .Title }}`.
+Write a literal `{{` as `{{ "{{" }}`. They are not YAML metadata. The CLI separates document blocks with a blank line and ends
 the document with a newline. Output uses LF on every platform, including text
 from configuration and templates.
 
 The CLI renders the whole document before writing it. Parsing or rendering
 errors therefore do not emit partial notes or overwrite an existing output
-file. File output uses a temporary file in the destination directory, then
-renames it over the destination after writing and flushing. A failed write
-does not truncate existing notes. Existing file permissions are retained;
-symbolic links are followed to their targets, and dangling links are errors.
+file. The document is then written directly to the output path, so an I/O
+failure during that write can leave a truncated file. Existing file permissions
+are retained and symbolic links are followed to their targets.
 
 Notes are written only to the output file. Progress logs go to standard
 output; errors go to standard error.
@@ -354,14 +362,14 @@ and go-git. Tests create repositories with go-git and do not need a Git
 executable.
 
 ```shell
-go build -o arn-gen .
+go build -o arn .
 go test ./...
 go vet ./...
 goreleaser check
 goreleaser release --snapshot --clean
 ```
 
-On Windows, build with `go build -o arn-gen.exe .`. Local builds report `dev`
+On Windows, build with `go build -o arn.exe .`. Local builds report `dev`
 for `--version`; release builds report the packaged version.
 
 Release packaging requires Git and GoReleaser v2, plus a checkout with at least

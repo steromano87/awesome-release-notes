@@ -1,13 +1,7 @@
 package main
 
-import (
-	"os"
-
-	"awesome-release-notes/internal/cli"
-)
-
-var version = "dev"
+import "awesome-release-notes/arn/cmd"
 
 func main() {
-	os.Exit(cli.Run(os.Args[1:], os.Stdout, os.Stderr, version))
+	cmd.Execute()
 }

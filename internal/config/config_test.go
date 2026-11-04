@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"text/template"
 )
 
 func TestSchemaCaseInsensitiveKeys(t *testing.T) {
@@ -31,7 +32,7 @@ func TestSchemaCaseInsensitiveKeys(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if cfg.Frontmatter != "Before" || cfg.SectionHeaderLevel != 3 ||
+			if matter(cfg.Frontmatter) != "Before" || cfg.SectionHeaderLevel != 3 ||
 				len(cfg.Categories) != 1 || cfg.Categories[0].Name != "Changes" ||
 				len(cfg.Categories[0].Categories) != 1 || cfg.Categories[0].Categories[0].Name != "Features" {
 				t.Fatalf("mixed-case keys changed configuration: %+v", cfg)
@@ -73,7 +74,7 @@ categories:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Frontmatter != "Introduction" || cfg.Backmatter != "Introduction" ||
+	if matter(cfg.Frontmatter) != "Introduction" || matter(cfg.Backmatter) != "Introduction" ||
 		len(cfg.Categories) != 2 || cfg.Categories[1].Name != "More features" ||
 		len(cfg.Categories[1].Patterns) != 1 || !cfg.Categories[1].Patterns[0].MatchString("feat: change") {
 		t.Fatalf("schema validation changed aliases or merges: %+v", cfg)
@@ -131,7 +132,7 @@ patterns = ["^feat:"]
 				if err != nil {
 					t.Fatalf("path %q: %v", path, err)
 				}
-				if got.Frontmatter != want.Frontmatter || got.ItemHeaderLevel != want.ItemHeaderLevel || !reflect.DeepEqual(got.Categories, want.Categories) ||
+				if matter(got.Frontmatter) != matter(want.Frontmatter) || got.ItemHeaderLevel != want.ItemHeaderLevel || !reflect.DeepEqual(got.Categories, want.Categories) ||
 					len(got.ExcludedPatterns) != 1 || !got.ExcludedPatterns[0].MatchString("Merge feature") {
 					t.Fatalf("path %q: inconsistent configuration: %+v", path, got)
 				}
@@ -149,13 +150,13 @@ func TestLoadFileDiscovery(t *testing.T) {
 	jsonPath := filepath.Join(root, DefaultName+".json")
 	writeConfig(t, jsonPath, `{"frontmatter":"JSON"}`)
 	cfg, err := LoadFile(root, "")
-	if err != nil || cfg.Frontmatter != "JSON" {
+	if err != nil || matter(cfg.Frontmatter) != "JSON" {
 		t.Fatalf("expected Viper extension precedence: %+v, %v", cfg, err)
 	}
 	t.Chdir(root)
 	writeConfig(t, "custom.toml", `frontmatter = "Explicit"`)
 	cfg, err = LoadFile(t.TempDir(), "custom.toml")
-	if err != nil || cfg.Frontmatter != "Explicit" {
+	if err != nil || matter(cfg.Frontmatter) != "Explicit" {
 		t.Fatalf("explicit paths must be relative to working directory: %+v, %v", cfg, err)
 	}
 	writeConfig(t, jsonPath, "{")
@@ -304,7 +305,7 @@ func TestLoadInvalidConfiguration(t *testing.T) {
 		{"array root", "[]", "cannot unmarshal"},
 		{"duplicate key", "frontmatter: A\nfrontmatter: B", "already defined"},
 		{"scalar patterns", "categories:\n  - name: Fixes\n    patterns: fix", "must be an array or slice"},
-		{"invalid value type", "frontmatter: [Release]", "expected type 'string'"},
+		{"invalid value type", "frontmatter: [Release]", "'frontmatter' expected a map or struct, got \"slice\""},
 		{"string ignore unmatched option", "ignoreUnmatchedCommits: 'true'", "expected type 'bool'"},
 		{"numeric ignore unmatched option", "ignoreUnmatchedCommits: 1", "expected type 'bool'"},
 		{"string category case option", "categoryCaseInsensitive: 'true'", "expected type 'bool'"},
@@ -365,4 +366,10 @@ func TestLoadInvalidConfiguration(t *testing.T) {
 			}
 		})
 	}
+}
+
+func matter(tmpl *template.Template) string {
+	var out strings.Builder
+	_ = tmpl.Execute(&out, nil)
+	return out.String()
 }

@@ -1,6 +1,8 @@
 package config
 
 import (
+	_ "embed"
+
 	"errors"
 	"fmt"
 	"math"
@@ -15,6 +17,11 @@ import (
 
 const DefaultName = ".release-notes"
 
+// DefaultYAML is the documented configuration written by `arn init`; keep it identical to the repository's .release-notes.yaml.
+//
+//go:embed default.yaml
+var DefaultYAML []byte
+
 type Category struct {
 	Name       string           `mapstructure:"name"`
 	Patterns   []*regexp.Regexp `mapstructure:"patterns"`
@@ -22,8 +29,8 @@ type Category struct {
 }
 
 type Config struct {
-	Frontmatter             string             `mapstructure:"frontmatter"`
-	Backmatter              string             `mapstructure:"backmatter"`
+	Frontmatter             *template.Template `mapstructure:"frontmatter"`
+	Backmatter              *template.Template `mapstructure:"backmatter"`
 	CommitPattern           *regexp.Regexp     `mapstructure:"commitPattern"`
 	IgnoreUnmatchedCommits  bool               `mapstructure:"ignoreUnmatchedCommits"`
 	ExcludedPatterns        []*regexp.Regexp   `mapstructure:"excludedPatterns"`
@@ -100,6 +107,9 @@ func decodeHook(from, to reflect.Type, data any) (any, error) {
 		return data, nil
 	}
 	if strings.TrimSpace(text) == "" {
+		if to == templateType {
+			return (*template.Template)(nil), nil // an empty template is unset; frontmatter/backmatter allow it
+		}
 		return nil, errors.New("value must not be empty")
 	}
 	if to == regexpType {
@@ -109,6 +119,11 @@ func decodeHook(from, to reflect.Type, data any) (any, error) {
 }
 
 func (cfg *Config) validate() error {
+	for name, tmpl := range map[string]*template.Template{"itemTitleTemplate": cfg.ItemTitleTemplate, "itemBodyTemplate": cfg.ItemBodyTemplate} {
+		if tmpl == nil {
+			return fmt.Errorf("'%s' value must not be empty", name)
+		}
+	}
 	if strings.TrimSpace(cfg.UncategorizedTitle) == "" || strings.ContainsAny(cfg.UncategorizedTitle, "\r\n") {
 		return errors.New("uncategorizedTitle must be a non-empty single line")
 	}

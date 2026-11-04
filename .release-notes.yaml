@@ -1,4 +1,4 @@
-# These are literal Markdown blocks placed after the title and after the categories.
+# These are Go templates, with the release title available as {{ .Title }}, rendered as Markdown blocks placed after the title and after the categories.
 frontmatter: |
   Changes included in this release.
 backmatter: |
