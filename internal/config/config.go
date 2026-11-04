@@ -23,9 +23,11 @@ const DefaultName = ".release-notes"
 var DefaultYAML []byte
 
 type Category struct {
-	Name       string           `mapstructure:"name"`
-	Patterns   []*regexp.Regexp `mapstructure:"patterns"`
-	Categories []Category       `mapstructure:"categories"`
+	Name        string             `mapstructure:"name"`
+	Frontmatter *template.Template `mapstructure:"frontmatter"`
+	Backmatter  *template.Template `mapstructure:"backmatter"`
+	Patterns    []*regexp.Regexp   `mapstructure:"patterns"`
+	Categories  []Category         `mapstructure:"categories"`
 }
 
 type Config struct {

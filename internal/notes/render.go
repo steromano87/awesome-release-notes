@@ -16,9 +16,11 @@ type TemplateItem struct {
 	Fields map[string]string
 }
 
-// TemplateData is the data available to the frontmatter and backmatter templates.
-type TemplateData struct {
+// MatterTemplateData is the data available to the frontmatter and backmatter templates.
+type MatterTemplateData struct {
 	Title string
+	// Category is the category name, empty for the release-level frontmatter and backmatter.
+	Category string
 }
 
 // Renderer turns commits into a Markdown document according to its configuration.
@@ -46,18 +48,22 @@ func (r *Renderer) Render(releaseTitle string, commits []gitlog.Commit) ([]byte,
 	if releaseTitle != "" {
 		blocks = append(blocks, "# "+releaseTitle)
 	}
-	front, err := r.renderMatter(cfg.Frontmatter, releaseTitle)
+	front, err := r.renderMatter(cfg.Frontmatter, releaseTitle, "")
 	if err != nil {
 		return nil, err
 	}
 	blocks = append(blocks, front...)
 	for _, category := range cfg.Categories {
-		blocks = append(blocks, r.renderCategory(category, groups, 0)...)
+		categoryBlocks, err := r.renderCategory(category, groups, 0, releaseTitle)
+		if err != nil {
+			return nil, err
+		}
+		blocks = append(blocks, categoryBlocks...)
 	}
 	if entries := groups[cfg.UncategorizedTitle]; len(entries) > 0 {
 		blocks = append(blocks, strings.Repeat("#", cfg.SectionHeaderLevel)+" "+cfg.UncategorizedTitle, strings.Join(entries, "\n\n"))
 	}
-	back, err := r.renderMatter(cfg.Backmatter, releaseTitle)
+	back, err := r.renderMatter(cfg.Backmatter, releaseTitle, "")
 	if err != nil {
 		return nil, err
 	}
@@ -67,12 +73,12 @@ func (r *Renderer) Render(releaseTitle string, commits []gitlog.Commit) ([]byte,
 }
 
 // renderMatter returns the rendered frontmatter or backmatter block, or no block when the template is unset or renders blank.
-func (r *Renderer) renderMatter(tmpl *template.Template, title string) ([]string, error) {
+func (r *Renderer) renderMatter(tmpl *template.Template, title, category string) ([]string, error) {
 	if tmpl == nil {
 		return nil, nil
 	}
 	var out bytes.Buffer
-	if err := tmpl.Execute(&out, TemplateData{Title: title}); err != nil {
+	if err := tmpl.Execute(&out, MatterTemplateData{Title: title, Category: category}); err != nil {
 		return nil, fmt.Errorf("render %s template: %w", tmpl.Name(), err)
 	}
 	if text := strings.Trim(out.String(), "\r\n"); text != "" {
@@ -143,18 +149,33 @@ func matchCategory(categories []config.Category, message string, depth int) (str
 	return "", 0
 }
 
-func (r *Renderer) renderCategory(category config.Category, groups map[string][]string, depth int) []string {
+// renderCategory renders the heading, frontmatter, items and backmatter of a category, then its subcategories.
+func (r *Renderer) renderCategory(category config.Category, groups map[string][]string, depth int, title string) ([]string, error) {
 	var children []string
 	for _, child := range category.Categories {
-		children = append(children, r.renderCategory(child, groups, depth+1)...)
+		blocks, err := r.renderCategory(child, groups, depth+1, title)
+		if err != nil {
+			return nil, err
+		}
+		children = append(children, blocks...)
 	}
 	entries := groups[category.Name]
 	if len(entries) == 0 && len(children) == 0 {
-		return nil
+		return nil, nil
 	}
 	blocks := []string{strings.Repeat("#", r.cfg.SectionHeaderLevel+depth) + " " + category.Name}
 	if len(entries) > 0 {
+		front, err := r.renderMatter(category.Frontmatter, title, category.Name)
+		if err != nil {
+			return nil, err
+		}
+		back, err := r.renderMatter(category.Backmatter, title, category.Name)
+		if err != nil {
+			return nil, err
+		}
+		blocks = append(blocks, front...)
 		blocks = append(blocks, strings.Join(entries, "\n\n"))
+		blocks = append(blocks, back...)
 	}
-	return append(blocks, children...)
+	return append(blocks, children...), nil
 }

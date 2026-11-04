@@ -336,6 +336,11 @@ leaves just the item heading.
 
 `frontmatter` and `backmatter` are Markdown blocks rendered as Go templates
 with the `.Title` field (empty without `--title`), e.g. `Notes for {{ .Title }}`.
+Categories (at any depth) accept their own `frontmatter` and `backmatter`: the
+frontmatter is rendered after the category heading and before its items, the
+backmatter after its items and before any subcategory or the next category.
+They are skipped for categories without items, and also expose `.Category`
+(the category name, empty at release level).
 Write a literal `{{` as `{{ "{{" }}`. They are not YAML metadata. The CLI separates document blocks with a blank line and ends
 the document with a newline. Output uses LF on every platform, including text
 from configuration and templates.
