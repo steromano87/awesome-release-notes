@@ -401,11 +401,11 @@ func TestRenderMatterTemplates(t *testing.T) {
 func TestRenderTemplateContext(t *testing.T) {
 	cfg := load(t, `
 commitPattern: '(?s)^(?P<description>.+)$'
-itemBodyTemplate: '{{.Hash}}|{{.ShortHash}}|{{.Subject}}|{{.Body}}|{{.Message}}|{{.Author}}|{{.Date.Format "2006-01-02"}}|{{.Fields.description}}'
+itemBodyTemplate: '{{.Hash}}|{{.ShortHash}}|{{.Subject}}|{{.Body}}|{{.Message}}|{{.Author.Name}}|{{.Date.Format "2006-01-02"}}|{{.Fields.description}}'
 `)
 	item := commit("abc", "subject", "body")
 	item.Hash = "abcdef"
-	item.Author = "Developer"
+	item.Author = gitlog.User{Name: "Developer"}
 	item.Date = time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)
 	out, err := NewRenderer(cfg).Render("Release notes", []gitlog.Commit{item})
 	if err != nil {
@@ -457,7 +457,7 @@ func TestRenderIndependentItemTemplates(t *testing.T) {
 		{"both omitted", "", "feat(api)!: Add options", "Original body.\n\n- Keep Markdown."},
 		{"title only", "itemTitleTemplate: '{{.Fields.description}} ({{.ShortHash}})'", "Add options (abc)", "Original body.\n\n- Keep Markdown."},
 		{"body only", "itemBodyTemplate: '**Details**: {{.Body}}'", "feat(api)!: Add options", "**Details**: Original body.\n\n- Keep Markdown."},
-		{"both customized", "itemTitleTemplate: '{{.Fields.scope}}: {{.Fields.description}}'\nitemBodyTemplate: 'By {{.Author}}: {{.Body}}'", "api: Add options", "By Developer: Original body.\n\n- Keep Markdown."},
+		{"both customized", "itemTitleTemplate: '{{.Fields.scope}}: {{.Fields.description}}'\nitemBodyTemplate: 'By {{.Author.Name}}: {{.Body}}'", "api: Add options", "By Developer: Original body.\n\n- Keep Markdown."},
 		{"block title template", "itemTitleTemplate: |\n  {{.Subject}}\n", "feat(api)!: Add options", "Original body.\n\n- Keep Markdown."},
 		{"independent definitions", `itemTitleTemplate: '{{define "value"}}Custom title{{end}}{{template "value"}}'
 itemBodyTemplate: '{{define "value"}}Custom body{{end}}{{template "value"}}'`, "Custom title", "Custom body"},
@@ -465,7 +465,7 @@ itemBodyTemplate: '{{define "value"}}Custom body{{end}}{{template "value"}}'`, "
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := load(t, "commitPattern: '^feat\\((?P<scope>[^)]+)\\)!: (?P<description>[^\\n]+)'\n"+tt.yaml)
 			item := commit("abc", "feat(api)!: Add options", "Original body.\n\n- Keep Markdown.")
-			item.Author = "Developer"
+			item.Author = gitlog.User{Name: "Developer"}
 			out, err := NewRenderer(cfg).Render("Release notes", []gitlog.Commit{item})
 			if err != nil {
 				t.Fatal(err)

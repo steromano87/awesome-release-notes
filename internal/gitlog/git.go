@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -14,14 +15,32 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/object"
 )
 
+// Commit is a commit as exposed to the templates; every exported field is part of the template API.
 type Commit struct {
-	Hash      string
+	// Hash is the full commit hash.
+	Hash string
+	// ShortHash is a prefix of at least seven characters, unique among the commits reachable from the end commit.
 	ShortHash string
-	Subject   string
-	Body      string
-	Message   string
-	Author    string
-	Date      time.Time
+	// Subject is the first paragraph of the message, with its lines joined by spaces.
+	Subject string
+	// Body is the text after the subject, without the trailer block and the "---------" rule GitHub adds before it.
+	Body string
+	// Trailer is the unparsed trailer block (e.g. Signed-off-by, Co-authored-by lines), empty when absent.
+	Trailer string
+	// Message is the complete message: subject, body and trailer. Commit and exclusion patterns match against it.
+	Message string
+	// Author is the commit author.
+	Author User
+	// CoAuthors lists the Co-authored-by trailers; it is empty, never nil, when there are none.
+	CoAuthors []User
+	// Date is the author date, not the committer date.
+	Date time.Time
+}
+
+// User is a person identified by name and email.
+type User struct {
+	Name  string
+	Email string
 }
 
 type Repository struct {
@@ -137,16 +156,18 @@ func (r *Repository) Commits(tag, to string) ([]Commit, error) {
 		if excluded[commit.Hash] {
 			continue
 		}
-		subject, body := splitMessage(commit.Message)
+		subject, full := splitMessage(commit.Message)
 		message := subject
-		if body != "" {
-			message += "\n\n" + body
+		if full != "" {
+			message += "\n\n" + full
 		}
+		body, trailer := splitTrailer(full)
 		hash := commit.Hash.String()
 		result = append(result, Commit{
 			Hash: hash, ShortHash: abbreviations[hash],
-			Subject: subject, Body: body, Message: message,
-			Author: commit.Author.Name, Date: commit.Author.When,
+			Subject: subject, Body: body, Trailer: trailer, Message: message,
+			Author: User{Name: commit.Author.Name, Email: commit.Author.Email}, Date: commit.Author.When,
+			CoAuthors: coAuthors(trailer),
 		})
 	}
 	return result, nil
@@ -288,6 +309,56 @@ func abbreviate(hashes []string) map[string]string {
 			}
 		}
 		result[hash] = hash[:length]
+	}
+	return result
+}
+
+var (
+	trailerLine  = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9-]*\s*:\s*\S`)
+	coAuthorLine = regexp.MustCompile(`(?i)^co-authored-by\s*:\s*(.*?)\s*(?:<([^>]*)>)?\s*$`)
+)
+
+// splitTrailer separates a final paragraph made only of "Key: value" lines (with indented continuations) from the body.
+func splitTrailer(body string) (string, string) {
+	if body == "" {
+		return "", ""
+	}
+	lines := strings.Split(body, "\n")
+	start := 0
+	for i := len(lines) - 1; i >= 0; i-- {
+		if strings.TrimSpace(lines[i]) == "" {
+			start = i + 1
+			break
+		}
+	}
+	block := lines[start:]
+	for i, line := range block {
+		continuation := i > 0 && (strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t"))
+		if !continuation && !trailerLine.MatchString(line) {
+			return body, ""
+		}
+	}
+	return trimSeparator(strings.Join(lines[:start], "\n")), strings.Join(block, "\n")
+}
+
+var separatorLine = regexp.MustCompile(`^-{3,}$`)
+
+// trimSeparator drops the horizontal rule (e.g. "---------") GitHub puts between a squash-merge body and its trailers.
+func trimSeparator(body string) string {
+	body = strings.Trim(body, "\n")
+	lines := strings.Split(body, "\n")
+	if last := len(lines) - 1; separatorLine.MatchString(strings.TrimSpace(lines[last])) && (last == 0 || strings.TrimSpace(lines[last-1]) == "") {
+		return strings.Trim(strings.Join(lines[:last], "\n"), "\n")
+	}
+	return body
+}
+
+func coAuthors(trailer string) []User {
+	result := []User{}
+	for _, line := range strings.Split(trailer, "\n") {
+		if m := coAuthorLine.FindStringSubmatch(line); m != nil && (m[1] != "" || m[2] != "") {
+			result = append(result, User{Name: m[1], Email: m[2]})
+		}
 	}
 	return result
 }

@@ -313,9 +313,11 @@ available in `frontmatter` and `backmatter`. Both templates have access to:
 | Field | Value |
 | --- | --- |
 | `.Hash`, `.ShortHash` | Full hash and a prefix of at least seven characters, unique among commits reachable from `HEAD`. |
-| `.Subject`, `.Body` | Commit subject and body, without trailing line endings. |
-| `.Message` | Subject plus `\n\n` and body, when present. |
-| `.Author` | Author name. |
+| `.Subject`, `.Body` | Commit subject and body, without trailing line endings. The body excludes the trailer block and the `---------` rule GitHub adds before it. |
+| `.Trailer` | The unparsed trailer block (last paragraph made only of `Key: value` lines, e.g. `Signed-off-by`), empty when absent. |
+| `.Message` | Subject plus `\n\n` and body and trailer, when present. |
+| `.Author` | Commit author, with `.Name` and `.Email`, e.g. `{{ .Author.Name }}`. |
+| `.CoAuthors` | List of `Co-authored-by` trailers, each with `.Name` and `.Email` like `.Author`; empty when there are none, e.g. `{{ range .CoAuthors }}{{ .Name }} {{ end }}`. |
 | `.Date` | Author date as `time.Time`, e.g. `{{ .Date.Format "2006-01-02" }}`. |
 | `.Fields` | Named regex captures, e.g. `{{ .Fields.description }}`. |
 

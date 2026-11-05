@@ -30,7 +30,7 @@ func TestCommitsWithoutTags(t *testing.T) {
 	}
 	got := commits[1]
 	if got.Subject != "feat: support Unicode caf\u00e9" || got.Body != "Body with\nmultiple lines." ||
-		got.Message != got.Subject+"\n\n"+got.Body || got.Author != "Release Notes Test" || got.Date.IsZero() {
+		got.Message != got.Subject+"\n\n"+got.Body || got.Author != (User{Name: "Release Notes Test", Email: "test@example.invalid"}) || got.Date.IsZero() {
 		t.Fatalf("unexpected commit data: %+v", got)
 	}
 	if commits[0].Body != "" || commits[0].Message != "Initial commit" {
