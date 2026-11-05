@@ -305,7 +305,10 @@ The release title stays at level 1; headings inside commit bodies are untouched.
 ### Item templates
 
 `itemTitleTemplate` and `itemBodyTemplate` use Go's standard
-[`text/template`](https://pkg.go.dev/text/template). Both have access to:
+[`text/template`](https://pkg.go.dev/text/template), extended with all the
+[Sprig](https://masterminds.github.io/sprig/) functions, e.g.
+`{{ .Fields.description | upper | trunc 60 }}`. The same functions are
+available in `frontmatter` and `backmatter`. Both templates have access to:
 
 | Field | Value |
 | --- | --- |

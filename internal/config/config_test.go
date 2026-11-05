@@ -368,6 +368,20 @@ func TestLoadInvalidConfiguration(t *testing.T) {
 	}
 }
 
+func TestSprigFunctions(t *testing.T) {
+	tmpl, err := newTemplate(`{{ "abc" | upper }}-{{ default "x" "" }}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out strings.Builder
+	if err := tmpl.Execute(&out, nil); err != nil {
+		t.Fatal(err)
+	}
+	if out.String() != "ABC-x" {
+		t.Fatalf("got %q", out.String())
+	}
+}
+
 func matter(tmpl *template.Template) string {
 	var out strings.Builder
 	_ = tmpl.Execute(&out, nil)

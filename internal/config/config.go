@@ -11,6 +11,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/Masterminds/sprig/v3"
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/viper"
 )
@@ -95,7 +96,7 @@ func load(settings *viper.Viper) (*Config, error) {
 }
 
 func newTemplate(text string) (*template.Template, error) {
-	return template.New("item").Option("missingkey=error").Parse(text)
+	return template.New("item").Funcs(sprig.TxtFuncMap()).Option("missingkey=error").Parse(text)
 }
 
 // decodeHook turns strings into regular expressions and templates, and rejects

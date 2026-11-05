@@ -3,6 +3,7 @@ module awesome-release-notes
 go 1.26.0
 
 require (
+	github.com/Masterminds/sprig/v3 v3.2.3
 	github.com/go-git/go-git/v6 v6.0.0-beta.1
 	github.com/go-viper/mapstructure/v2 v2.5.0
 	github.com/spf13/cobra v1.10.2
@@ -39,7 +40,6 @@ require (
 	github.com/BurntSushi/toml v1.2.1 // indirect
 	github.com/Masterminds/goutils v1.1.1 // indirect
 	github.com/Masterminds/semver/v3 v3.2.1 // indirect
-	github.com/Masterminds/sprig/v3 v3.2.3 // indirect
 	github.com/Microsoft/go-winio v0.6.4 // indirect
 	github.com/ProtonMail/go-crypto v1.5.2 // indirect
 	github.com/alessio/shellescape v1.4.1 // indirect
