@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"fmt"
 
-	"awesome-release-notes/internal/cliutil"
+	"github.com/steromano87/awesome-release-notes/internal/cliutil"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"

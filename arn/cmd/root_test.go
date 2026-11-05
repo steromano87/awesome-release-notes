@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"awesome-release-notes/internal/config"
-	"awesome-release-notes/internal/testutil"
+	"github.com/steromano87/awesome-release-notes/internal/config"
+	"github.com/steromano87/awesome-release-notes/internal/testutil"
 )
 
 func run(args []string, stdout, stderr *bytes.Buffer) int {

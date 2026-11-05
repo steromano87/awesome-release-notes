@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"awesome-release-notes/internal/config"
+	"github.com/steromano87/awesome-release-notes/internal/config"
 
 	"github.com/spf13/cobra"
 )

@@ -6,9 +6,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"awesome-release-notes/internal/cliutil"
-	"awesome-release-notes/internal/config"
-	"awesome-release-notes/internal/gitlog"
+	"github.com/steromano87/awesome-release-notes/internal/cliutil"
+	"github.com/steromano87/awesome-release-notes/internal/config"
+	"github.com/steromano87/awesome-release-notes/internal/gitlog"
 
 	"github.com/spf13/cobra"
 )

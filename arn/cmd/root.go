@@ -5,15 +5,15 @@ import (
 	"log"
 	"os"
 
-	"awesome-release-notes/arn/cmd/check"
-	"awesome-release-notes/arn/cmd/generate"
-	initcmd "awesome-release-notes/arn/cmd/init"
-	"awesome-release-notes/internal/cliutil"
+	"github.com/steromano87/awesome-release-notes/arn/cmd/check"
+	"github.com/steromano87/awesome-release-notes/arn/cmd/generate"
+	initcmd "github.com/steromano87/awesome-release-notes/arn/cmd/init"
+	"github.com/steromano87/awesome-release-notes/internal/cliutil"
 
 	"github.com/spf13/cobra"
 )
 
-// version is set at build time with -ldflags "-X awesome-release-notes/arn/cmd.version=...".
+// version is set at build time with -ldflags "-X github.com/steromano87/awesome-release-notes/arn/cmd.version=...".
 var version = "dev"
 
 var rootCmd = &cobra.Command{

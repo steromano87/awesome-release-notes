@@ -1,6 +1,6 @@
 package main
 
-import "awesome-release-notes/arn/cmd"
+import "github.com/steromano87/awesome-release-notes/arn/cmd"
 
 func main() {
 	cmd.Execute()

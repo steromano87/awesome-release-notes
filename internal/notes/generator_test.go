@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"awesome-release-notes/internal/testutil"
+	"github.com/steromano87/awesome-release-notes/internal/testutil"
 )
 
 func TestGenerator(t *testing.T) {

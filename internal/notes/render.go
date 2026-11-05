@@ -7,8 +7,8 @@ import (
 	"strings"
 	"text/template"
 
-	"awesome-release-notes/internal/config"
-	"awesome-release-notes/internal/gitlog"
+	"github.com/steromano87/awesome-release-notes/internal/config"
+	"github.com/steromano87/awesome-release-notes/internal/gitlog"
 )
 
 type TemplateItem struct {

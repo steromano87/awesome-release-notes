@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"awesome-release-notes/internal/cliutil"
-	"awesome-release-notes/internal/config"
-	"awesome-release-notes/internal/testutil"
+	"github.com/steromano87/awesome-release-notes/internal/cliutil"
+	"github.com/steromano87/awesome-release-notes/internal/config"
+	"github.com/steromano87/awesome-release-notes/internal/testutil"
 
 	git "github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/plumbing"

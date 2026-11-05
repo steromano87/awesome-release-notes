@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"awesome-release-notes/internal/testutil"
+	"github.com/steromano87/awesome-release-notes/internal/testutil"
 
 	git "github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/plumbing"

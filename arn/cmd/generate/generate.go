@@ -7,8 +7,8 @@ import (
 	"os"
 	"strings"
 
-	"awesome-release-notes/internal/cliutil"
-	"awesome-release-notes/internal/notes"
+	"github.com/steromano87/awesome-release-notes/internal/cliutil"
+	"github.com/steromano87/awesome-release-notes/internal/notes"
 
 	"github.com/spf13/cobra"
 )

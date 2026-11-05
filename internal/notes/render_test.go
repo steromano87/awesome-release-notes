@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"awesome-release-notes/internal/config"
-	"awesome-release-notes/internal/gitlog"
+	"github.com/steromano87/awesome-release-notes/internal/config"
+	"github.com/steromano87/awesome-release-notes/internal/gitlog"
 )
 
 func TestRender(t *testing.T) {

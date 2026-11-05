@@ -4,8 +4,8 @@ import (
 	"errors"
 	"log"
 
-	"awesome-release-notes/internal/config"
-	"awesome-release-notes/internal/gitlog"
+	"github.com/steromano87/awesome-release-notes/internal/config"
+	"github.com/steromano87/awesome-release-notes/internal/gitlog"
 )
 
 // Generator builds the release notes of a Git repository. Empty fields use the defaults of the CLI.

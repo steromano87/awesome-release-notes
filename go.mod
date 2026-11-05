@@ -1,4 +1,4 @@
-module awesome-release-notes
+module github.com/steromano87/awesome-release-notes
 
 go 1.26.0
 
