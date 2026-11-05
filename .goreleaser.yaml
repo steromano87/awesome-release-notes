@@ -35,6 +35,8 @@ builds:
 
 archives:
   - id: binaries
+    ids:
+      - arn
     strip_binary_directory: true
     formats:
       - tar.gz
@@ -45,7 +47,6 @@ archives:
           - zip
     files:
       - README.md
-      - .release-notes.yaml
       - src: internal/config/release-notes.schema.json
         dst: .
         strip_parent: true
@@ -57,5 +58,8 @@ checksum:
 changelog:
   disable: true
 
+announce:
+  skip: true
+
 release:
-  draft: true
+  disable: true
