@@ -45,6 +45,39 @@ In PowerShell, use paths such as `--repo C:\Projects\my-project`. If the binary
 is in the current directory rather than on `PATH`, run `.\arn.exe` on
 Windows or `./arn` on Linux/macOS.
 
+### GitHub Action
+
+The repository root contains a composite action that downloads the release
+archive for the runner's OS and architecture (verifying `checksums.txt`),
+optionally caches it, and runs `arn generate` or `arn check`. The repository
+history must be available, so fetch tags and full history:
+
+```yaml
+steps:
+  - uses: actions/checkout@v7
+    with:
+      fetch-depth: 0
+  - uses: steromano87/awesome-release-notes@v1
+    with:
+      command: generate
+      version: latest
+      title: Release ${{ github.ref_name }}
+      output-file: RELEASE_NOTES.md
+```
+
+| Input | Default | Description |
+| --- | --- | --- |
+| `command` | `generate` | `generate` or `check`. |
+| `version` | `latest` | Release to download, with or without the leading `v`. |
+| `cache` | `true` | Cache the binary with `actions/cache`. |
+| `token` | `github.token` | Token for downloading release assets. |
+| `repo` | | `--repo`. |
+| `config` | | `--config`. |
+| `output-file` | `RELEASE_NOTES.md` | Output path (`generate` only). |
+| `from`, `to`, `format`, `title` | | `--from`, `--to`, `--format`, `--title` (`generate` only). |
+
+Outputs: `version` (resolved version) and `output-file` (`generate` only).
+
 With the included configuration, a commit message such as:
 
 ```text

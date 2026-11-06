@@ -1,0 +1,200 @@
+name: awesome-release-notes
+description: Download arn (awesome-release-notes) from GitHub Releases and run its generate or check command.
+branding:
+  icon: book-open
+  color: blue
+
+inputs:
+  command:
+    description: Command to run, generate or check.
+    required: false
+    default: generate
+  version:
+    description: arn version to use, with or without the leading v (for example 1.2.0). Defaults to the latest release.
+    required: false
+    default: latest
+  cache:
+    description: Cache the downloaded binary with actions/cache.
+    required: false
+    default: "true"
+  token:
+    description: Token used to download release assets. Only needed for private forks or to avoid rate limits.
+    required: false
+    default: ${{ github.token }}
+  repo:
+    description: Git repository, or a directory inside it (--repo).
+    required: false
+    default: ""
+  config:
+    description: Configuration file path (--config).
+    required: false
+    default: ""
+  output-file:
+    description: Output file path. Required by generate, ignored by check.
+    required: false
+    default: RELEASE_NOTES.md
+  from:
+    description: Starting revision, excluded (--from). generate only.
+    required: false
+    default: ""
+  to:
+    description: Ending revision, included (--to). generate only.
+    required: false
+    default: ""
+  format:
+    description: Output format (--format). generate only.
+    required: false
+    default: ""
+  title:
+    description: Release title (--title). generate only.
+    required: false
+    default: ""
+
+outputs:
+  version:
+    description: Resolved arn version, without the leading v.
+    value: ${{ steps.resolve.outputs.version }}
+  output-file:
+    description: Path of the generated release notes (generate only).
+    value: ${{ steps.run.outputs.output-file }}
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve version and platform
+      id: resolve
+      shell: bash
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_COMMAND: ${{ inputs.command }}
+        ACTION_REPO: ${{ github.action_repository || 'steromano87/awesome-release-notes' }}
+      # language=bash
+      run: |-
+        set -euo pipefail
+        case "$INPUT_COMMAND" in
+          generate|check) ;;
+          *) echo "::error::Unsupported command '$INPUT_COMMAND', expected generate or check"; exit 1 ;;
+        esac
+
+        case "$RUNNER_OS" in
+          Linux) os=linux ext=tar.gz ;;
+          macOS) os=darwin ext=tar.gz ;;
+          Windows) os=windows ext=zip ;;
+          *) echo "::error::Unsupported runner OS $RUNNER_OS"; exit 1 ;;
+        esac
+        case "$RUNNER_ARCH" in
+          X64) arch=amd64 ;;
+          ARM64) arch=arm64 ;;
+          *) echo "::error::Unsupported runner architecture $RUNNER_ARCH"; exit 1 ;;
+        esac
+
+        version="${INPUT_VERSION#v}"
+        if [ -z "$version" ] || [ "$version" = latest ]; then
+          # The redirect of /releases/latest avoids the API rate limit.
+          location=$(curl -fsSIL -o /dev/null -w '%{url_effective}' "https://github.com/$ACTION_REPO/releases/latest")
+          tag="${location##*/}"
+          case "$location" in
+            */releases/tag/*) version="${tag#v}" ;;
+            *) echo "::error::No release found for $ACTION_REPO"; exit 1 ;;
+          esac
+        fi
+        if [ -z "$version" ]; then
+          echo "::error::Unable to resolve the latest release of $ACTION_REPO"
+          exit 1
+        fi
+
+        {
+          echo "version=$version"
+          echo "os=$os"
+          echo "arch=$arch"
+          echo "ext=$ext"
+          echo "dir=${RUNNER_TEMP}/arn-${version}-${os}-${arch}"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Cache arn binary
+      id: cache
+      if: inputs.cache == 'true'
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      with:
+        path: ${{ steps.resolve.outputs.dir }}
+        key: arn-${{ steps.resolve.outputs.version }}-${{ steps.resolve.outputs.os }}-${{ steps.resolve.outputs.arch }}
+
+    - name: Download arn
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        VERSION: ${{ steps.resolve.outputs.version }}
+        OS: ${{ steps.resolve.outputs.os }}
+        ARCH: ${{ steps.resolve.outputs.arch }}
+        EXT: ${{ steps.resolve.outputs.ext }}
+        DIR: ${{ steps.resolve.outputs.dir }}
+        ACTION_REPO: ${{ github.action_repository || 'steromano87/awesome-release-notes' }}
+        TOKEN: ${{ inputs.token }}
+      # language=bash
+      run: |-
+        set -euo pipefail
+        archive="arn_${VERSION}_${OS}_${ARCH}.${EXT}"
+        base="https://github.com/$ACTION_REPO/releases/download/v${VERSION}"
+        tmp=$(mktemp -d)
+        auth=()
+        [ -n "$TOKEN" ] && auth=(-H "Authorization: Bearer $TOKEN")
+
+        curl -fsSL --retry 3 ${auth[@]+"${auth[@]}"} -o "$tmp/$archive" "$base/$archive"
+        curl -fsSL --retry 3 ${auth[@]+"${auth[@]}"} -o "$tmp/checksums.txt" "$base/checksums.txt"
+
+        expected=$(awk -v f="$archive" '$2 == f { print $1 }' "$tmp/checksums.txt")
+        if [ -z "$expected" ]; then
+          echo "::error::$archive not listed in checksums.txt"
+          exit 1
+        fi
+        if command -v sha256sum >/dev/null; then
+          actual=$(sha256sum "$tmp/$archive" | awk '{ print $1 }')
+        else
+          actual=$(shasum -a 256 "$tmp/$archive" | awk '{ print $1 }')
+        fi
+        if [ "$expected" != "$actual" ]; then
+          echo "::error::Checksum mismatch for $archive"
+          exit 1
+        fi
+
+        mkdir -p "$DIR"
+        if [ "$EXT" = zip ]; then
+          powershell.exe -NoProfile -Command "Expand-Archive -LiteralPath '$(cygpath -w "$tmp/$archive")' -DestinationPath '$(cygpath -w "$DIR")' -Force"
+        else
+          tar -xzf "$tmp/$archive" -C "$DIR"
+        fi
+        rm -rf "$tmp"
+
+    - name: Run arn
+      id: run
+      shell: bash
+      env:
+        DIR: ${{ steps.resolve.outputs.dir }}
+        INPUT_COMMAND: ${{ inputs.command }}
+        INPUT_REPO: ${{ inputs.repo }}
+        INPUT_CONFIG: ${{ inputs.config }}
+        INPUT_OUTPUT_FILE: ${{ inputs.output-file }}
+        INPUT_FROM: ${{ inputs.from }}
+        INPUT_TO: ${{ inputs.to }}
+        INPUT_FORMAT: ${{ inputs.format }}
+        INPUT_TITLE: ${{ inputs.title }}
+      # language=bash
+      run: |-
+        set -euo pipefail
+        bin="$DIR/arn"
+        [ "$RUNNER_OS" = Windows ] && bin="$bin.exe"
+        chmod +x "$bin"
+
+        args=("$INPUT_COMMAND")
+        [ -n "$INPUT_REPO" ] && args+=(--repo "$INPUT_REPO")
+        [ -n "$INPUT_CONFIG" ] && args+=(--config "$INPUT_CONFIG")
+        if [ "$INPUT_COMMAND" = generate ]; then
+          [ -n "$INPUT_FROM" ] && args+=(--from "$INPUT_FROM")
+          [ -n "$INPUT_TO" ] && args+=(--to "$INPUT_TO")
+          [ -n "$INPUT_FORMAT" ] && args+=(--format "$INPUT_FORMAT")
+          [ -n "$INPUT_TITLE" ] && args+=(--title "$INPUT_TITLE")
+          args+=("$INPUT_OUTPUT_FILE")
+          echo "output-file=$INPUT_OUTPUT_FILE" >> "$GITHUB_OUTPUT"
+        fi
+
+        "$bin" "${args[@]}"
