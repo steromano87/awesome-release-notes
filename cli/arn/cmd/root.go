@@ -5,9 +5,9 @@ import (
 	"log"
 	"os"
 
-	"github.com/steromano87/awesome-release-notes/arn/cmd/check"
-	"github.com/steromano87/awesome-release-notes/arn/cmd/generate"
-	initcmd "github.com/steromano87/awesome-release-notes/arn/cmd/init"
+	"github.com/steromano87/awesome-release-notes/cli/arn/cmd/check"
+	"github.com/steromano87/awesome-release-notes/cli/arn/cmd/generate"
+	initcmd "github.com/steromano87/awesome-release-notes/cli/arn/cmd/init"
 	"github.com/steromano87/awesome-release-notes/internal/cliutil"
 
 	"github.com/spf13/cobra"

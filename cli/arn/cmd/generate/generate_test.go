@@ -207,7 +207,7 @@ func TestExampleConfiguration(t *testing.T) {
 	for _, message := range messages {
 		testutil.Commit(t, dir, message)
 	}
-	data, err := os.ReadFile(filepath.Join("..", "..", "..", config.DefaultName+".yaml"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "..", "..", config.DefaultName+".yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}

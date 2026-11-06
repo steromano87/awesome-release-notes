@@ -31,4 +31,4 @@ jobs:
       - name: Build with GoReleaser
         uses: goreleaser/goreleaser-action@v7
         with:
-          args: build --snapshot
+          args: release --snapshot --clean
