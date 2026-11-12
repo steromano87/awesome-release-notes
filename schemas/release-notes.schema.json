@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "arn-gen release-note configuration",
+  "description": "All keys are optional: omit them to use their defaults. Explicit null values are not allowed. The CLI also accepts keys in any letter case, but this schema validates the canonical camelCase names.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "frontmatter": {
+      "description": "Go template rendered as Markdown after the release title. {{ .Title }} is available.",
+      "type": "string"
+    },
+    "backmatter": {
+      "description": "Go template rendered as Markdown after the categories. {{ .Title }} is available.",
+      "type": "string"
+    },
+    "commitPattern": {
+      "description": "Go regular expression applied to subject + optional blank line + body. Capture names must be unique.",
+      "type": "string",
+      "minLength": 1,
+      "default": "^(?P<description>[^\\n]+)"
+    },
+    "ignoreUnmatchedCommits": {
+      "description": "Skip commits that do not match commitPattern instead of reporting an error.",
+      "type": "boolean",
+      "default": false
+    },
+    "excludedPatterns": {
+      "description": "Regular expressions matched against the full commit message; any match excludes the commit.",
+      "$ref": "#/$defs/patterns"
+    },
+    "itemTitleTemplate": {
+      "description": "Go template for the item title. Must not be empty.",
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S",
+      "default": "{{ .Subject }}"
+    },
+    "itemBodyTemplate": {
+      "description": "Go template for the item content. Must not be empty.",
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S",
+      "default": "{{ .Body }}"
+    },
+    "sectionHeaderLevel": {
+      "description": "Base Markdown heading level of category sections; +1 per category depth.",
+      "$ref": "#/$defs/headerLevel",
+      "default": 2
+    },
+    "itemHeaderLevel": {
+      "description": "Base Markdown heading level of items; +1 per category depth.",
+      "$ref": "#/$defs/headerLevel",
+      "default": 3
+    },
+    "uncategorizedTitle": {
+      "description": "Title of the section for commits matching no category. Must be a non-empty single line, unique among category names.",
+      "type": "string",
+      "pattern": "^(?=.*\\S)[^\\r\\n]+$",
+      "default": "Other changes"
+    },
+    "categoryCaseInsensitive": {
+      "description": "Ignore case in category patterns at every depth.",
+      "type": "boolean",
+      "default": false
+    },
+    "categories": {
+      "description": "Sibling categories are tried in order; children before the parent. Names must be unique across the whole tree.",
+      "$ref": "#/$defs/categories"
+    }
+  },
+  "$defs": {
+    "headerLevel": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 6
+    },
+    "patterns": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "categories": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/category" }
+    },
+    "category": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "description": "Non-empty single line, unique across the whole tree.",
+          "type": "string",
+          "pattern": "^(?=.*\\S)[^\\r\\n]+$"
+        },
+        "patterns": {
+          "description": "Regular expressions; optional when the category has subcategories, in which case they act as a fallback.",
+          "$ref": "#/$defs/patterns"
+        },
+        "categories": {
+          "description": "Subcategories.",
+          "$ref": "#/$defs/categories"
+        }
+      },
+      "anyOf": [
+        { "required": ["patterns"], "properties": { "patterns": { "minItems": 1 } } },
+        { "required": ["categories"], "properties": { "categories": { "minItems": 1 } } }
+      ]
+    }
+  }
+}

@@ -47,7 +47,7 @@ archives:
           - zip
     files:
       - README.md
-      - src: internal/config/release-notes.schema.json
+      - src: schemas/release-notes.schema.json
         dst: .
         strip_parent: true
 

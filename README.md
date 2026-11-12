@@ -235,7 +235,7 @@ Heading levels must be integers from 1 to 6; integer-valued numbers such as
 `3.0` are accepted.
 
 For editor validation, use the
-[JSON Schema](internal/config/release-notes.schema.json), included in release
+[JSON Schema](schemas/release-notes.schema.json), included in release
 archives as `release-notes.schema.json`. If it is next to your YAML file,
 editors supporting YAML Language Server can use:
 
