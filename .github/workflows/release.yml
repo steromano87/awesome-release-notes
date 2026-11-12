@@ -39,3 +39,13 @@ jobs:
         uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7
         with:
           args: release --clean
+
+      - name: Create draft release
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
+        with:
+          draft: true
+          working_directory: dist
+          target_commitish: ${{ github.sha }}
+          files: |
+            arn*.tar.gz
+            arn*.zip
