@@ -14,7 +14,7 @@ type Generator struct {
 	ConfigPath string // configuration file; the repository-root default when empty
 	From       string // excluded starting revision; nearest reachable tag when empty
 	To         string // included ending revision; HEAD when empty
-	Title      string
+	Title      string // release title; the tag at the end commit, or "unknown" without one, when empty
 }
 
 func (g Generator) Generate() (notes []byte, err error) {
@@ -27,8 +27,20 @@ func (g Generator) Generate() (notes []byte, err error) {
 	if err != nil {
 		return nil, err
 	}
+	title := g.Title
+	if title == "" {
+		if title, err = repo.TagAt(g.To); err != nil {
+			return nil, err
+		}
+		if title == "" {
+			log.Print("[warn] No title specified and the end commit has no tag; using title \"unknown\"")
+			title = "unknown"
+		} else {
+			log.Printf("[info] Release title taken from tag %q", title)
+		}
+	}
 	log.Printf("[info] Generating release notes from %d commits", len(commits))
-	return NewRenderer(cfg).Render(g.Title, commits)
+	return NewRenderer(cfg).Render(title, commits)
 }
 
 // Check loads and validates the configuration without reading any commit.

@@ -173,6 +173,51 @@ func (r *Repository) Commits(tag, to string) ([]Commit, error) {
 	return result, nil
 }
 
+// TagAt returns the name of the tag pointing at rev (HEAD when empty), or "" when there is none.
+// With several tags, annotated ones win, then the most recent, then the lowest name.
+func (r *Repository) TagAt(rev string) (string, error) {
+	var end plumbing.Hash
+	if rev == "" {
+		head, err := r.repo.Head()
+		if err != nil {
+			return "", fmt.Errorf("repository must have at least one commit: %w", err)
+		}
+		end = head.Hash()
+	} else {
+		var err error
+		if end, err = r.resolveCommit(rev); err != nil {
+			return "", err
+		}
+	}
+	refs, err := r.repo.Tags()
+	if err != nil {
+		return "", fmt.Errorf("read Git tags: %w", err)
+	}
+	defer refs.Close()
+	var best string
+	var bestAnnotated bool
+	var bestDate time.Time
+	err = refs.ForEach(func(ref *plumbing.Reference) error {
+		commit, annotated, date, err := r.peelTag(ref.Hash())
+		if errors.Is(err, errNotCommit) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("read tag %q: %w", ref.Name().Short(), err)
+		}
+		if commit.Hash != end {
+			return nil
+		}
+		name := ref.Name().Short()
+		if best == "" || annotated && !bestAnnotated ||
+			annotated == bestAnnotated && (date.After(bestDate) || date.Equal(bestDate) && name < best) {
+			best, bestAnnotated, bestDate = name, annotated, date
+		}
+		return nil
+	})
+	return best, err
+}
+
 var errNotCommit = errors.New("tag does not point to a commit")
 
 // resolveCommit resolves a hash, branch, tag, or revision expression to a commit.

@@ -54,5 +54,5 @@ func init() {
 	flags.StringVar(&gen.From, "from", "", "starting revision, excluded: tag, commit hash, or expression, not a branch (default: nearest tag reachable from the end commit)")
 	flags.StringVar(&gen.To, "to", "", "ending revision, included: commit hash, branch, or tag (default: HEAD)")
 	flags.StringVar(&format, "format", "markdown", "output format (markdown)")
-	flags.StringVar(&gen.Title, "title", "", "release title, a non-empty single line (default: no title heading)")
+	flags.StringVar(&gen.Title, "title", "", "release title, a non-empty single line (default: the Git tag at the end commit, or 'unknown' with a warning if it has none)")
 }

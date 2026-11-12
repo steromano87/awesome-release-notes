@@ -355,7 +355,7 @@ func TestRunWithoutArguments(t *testing.T) {
 	if code := run([]string{"generate", "notes.md"}, &stdout, &stderr); code != 0 {
 		t.Fatalf("exit %d: %s", code, &stderr)
 	}
-	if data, err := os.ReadFile("notes.md"); err != nil || !strings.HasPrefix(string(data), "## Other changes\n") {
+	if data, err := os.ReadFile("notes.md"); err != nil || !strings.HasPrefix(string(data), "# unknown\n\n## Other changes\n") {
 		t.Fatalf("output path must be relative to the working directory: %q, %v", data, err)
 	}
 	if code := run(nil, &stdout, &stderr); code != 0 || !strings.Contains(stdout.String(), "Usage:") {

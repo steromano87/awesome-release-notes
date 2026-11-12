@@ -26,3 +26,21 @@ func TestGenerator(t *testing.T) {
 		t.Fatalf("unexpected notes: %s", got)
 	}
 }
+
+func TestGeneratorDefaultTitle(t *testing.T) {
+	dir := testutil.Repository(t)
+	testutil.Commit(t, dir, "first")
+	testutil.Tag(t, dir, "v1.0.0", true)
+	testutil.Commit(t, dir, "second")
+	testutil.Tag(t, dir, "v2.0.0", false)
+	testutil.Commit(t, dir, "third")
+	if err := os.WriteFile(filepath.Join(dir, ".release-notes.yaml"), []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct{ to, want string }{{"v2.0.0", "# v2.0.0\n"}, {"", "# unknown\n"}} {
+		out, err := Generator{RepoPath: dir, To: tt.to}.Generate()
+		if err != nil || !strings.HasPrefix(string(out), tt.want) {
+			t.Fatalf("to %q: want prefix %q, got %q, %v", tt.to, tt.want, out, err)
+		}
+	}
+}

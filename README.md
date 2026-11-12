@@ -126,7 +126,7 @@ an item heading.
 | `--from` | Nearest reachable tag | Starting tag, hash, or revision (not a branch), excluded from the range. |
 | `--to` | `HEAD` | Ending revision (hash, branch, or tag), included in the range. |
 | `--format` | `markdown` | Output format; only `markdown` is supported. |
-| `--title` | None (no title heading) | Optional single-line release title. |
+| `--title` | Tag at the end commit, else `unknown` (with a warning) | Optional single-line release title. |
 | `--version` | | Print the binary version. |
 | `--help` | | Print usage. |
 
@@ -373,7 +373,7 @@ leaves just the item heading.
 ## Output and errors
 
 `frontmatter` and `backmatter` are Markdown blocks rendered as Go templates
-with the `.Title` field (empty without `--title`), e.g. `Notes for {{ .Title }}`.
+with the `.Title` field (the release title, see `--title`), e.g. `Notes for {{ .Title }}`.
 Categories (at any depth) accept their own `frontmatter` and `backmatter`: the
 frontmatter is rendered after the category heading and before its items, the
 backmatter after its items and before any subcategory or the next category.
